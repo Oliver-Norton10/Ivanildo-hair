@@ -311,6 +311,50 @@
   .owner-menu-item:hover{
     background:var(--bg-elev);
   }
+  .summary-stat-grid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:10px;
+  }
+  .summary-stat-card{
+    background:var(--bg-elev);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:14px;
+  }
+  .summary-stat-num{
+    font-size:26px;
+    font-weight:800;
+    color:var(--teal-dim);
+    line-height:1.1;
+  }
+  .summary-stat-label{
+    font-size:11.5px;
+    color:var(--muted);
+    margin-top:4px;
+  }
+  .summary-stat-card.full{
+    grid-column: 1 / -1;
+  }
+  .client-row{
+    background:var(--bg-card);
+    border:1px solid var(--line);
+    border-left:3px solid var(--teal);
+    border-radius:12px;
+    padding:12px 14px;
+    margin-bottom:10px;
+  }
+  .client-row-top{
+    display:flex; justify-content:space-between; align-items:baseline; gap:8px;
+  }
+  .client-row-name{ font-weight:700; font-size:14px; color:var(--ink); }
+  .client-row-visits{
+    font-size:11.5px; font-weight:700; color:var(--teal-dim);
+    background:rgba(27,143,166,0.1);
+    padding:2px 8px; border-radius:20px; flex-shrink:0;
+  }
+  .client-row-phone{ font-size:12.5px; color:var(--muted); margin-top:2px; }
+  .client-row-last{ font-size:12px; color:var(--muted); margin-top:4px; }
   .btn-notif{
     width:100%;
     padding:12px;
@@ -1101,6 +1145,9 @@
             <button class="owner-menu-btn" data-action="toggle-owner-menu" title="Mais opções">☰</button>
             <div id="ownerMenuDropdown" class="owner-menu-dropdown" style="display:none">
               <button class="owner-menu-item" data-action="open-general-history">🔍 Buscar cliente / Histórico geral</button>
+              <button class="owner-menu-item" data-action="open-client-list">👥 Lista de clientes</button>
+              <button class="owner-menu-item" data-action="open-month-summary">📊 Resumo do mês</button>
+              <button class="owner-menu-item" data-action="export-csv-data">⬇️ Exportar dados (CSV)</button>
             </div>
           </div>
           <button class="owner-exit-btn" data-action="exit-owner">Sair</button>
@@ -1170,6 +1217,38 @@
       <div id="finalizeChemError" class="err-msg" style="display:none; margin-top:10px;">Escolha uma opção antes de finalizar.</div>
       <button class="btn-primary" id="confirmFinalizeChemBtn" data-action="confirm-finalize-chemical" style="margin-top:14px;">Finalizar atendimento</button>
       <button class="btn-secondary" data-action="cancel-finalize-chemical">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- CLIENT LIST MODAL (owner side — one row per unique client, grouped by phone) -->
+  <div id="clientListOverlay" class="modal-overlay" style="display:none">
+    <div class="modal-card manual-modal-card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+        <div>
+          <h3 class="modal-title">Lista de clientes</h3>
+          <p class="modal-sub">Cada cliente único, com quantas vezes veio e a última visita.</p>
+        </div>
+        <button class="owner-exit-btn" data-action="close-client-list">Fechar</button>
+      </div>
+      <div class="field" style="margin-top:12px;">
+        <input type="text" id="clientListSearchInput" placeholder="Nome ou telefone" data-action="input-client-list-search" value="">
+      </div>
+      <div id="clientListCount" class="day-count" style="margin-top:10px;"></div>
+      <div id="clientListContent" style="margin-top:6px;"></div>
+    </div>
+  </div>
+
+  <!-- MONTH SUMMARY MODAL (owner side) -->
+  <div id="monthSummaryOverlay" class="modal-overlay" style="display:none">
+    <div class="modal-card manual-modal-card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+        <div>
+          <h3 class="modal-title">Resumo do mês</h3>
+          <p class="modal-sub" id="monthSummarySub"></p>
+        </div>
+        <button class="owner-exit-btn" data-action="close-month-summary">Fechar</button>
+      </div>
+      <div id="monthSummaryContent" style="margin-top:12px;"></div>
     </div>
   </div>
 
@@ -1330,6 +1409,9 @@ let state = {
   ownerMenuOpen: false,
   generalHistoryOpen: false,
   generalHistorySearch: '',
+  clientListOpen: false,
+  clientListSearch: '',
+  monthSummaryOpen: false,
   knownApptIds: null,
   appointmentsCache: [],
   ownerDate: todayISO(),
@@ -1944,6 +2026,152 @@ function renderGeneralHistory(){
   }).join('');
 }
 
+// Groups every non-cancelled, non-blocked appointment by phone number,
+// so each row represents one real client (not one visit).
+function buildClientGroups(){
+  const groups = new Map(); // key: digitsOnly(phone), value: { name, phone, visits: [...] }
+  state.appointmentsCache
+    .filter(a => a.status !== 'blocked' && a.status !== 'cancelled' && a.phone && a.phone.trim())
+    .forEach(a => {
+      const key = digitsOnly(a.phone);
+      if(!key) return;
+      if(!groups.has(key)){
+        groups.set(key, { phone: a.phone, name: a.name, visits: [] });
+      }
+      const g = groups.get(key);
+      g.visits.push(a);
+      // keep the most recently used name on file for this phone
+      if(!g.latestDate || (a.date + a.time) > g.latestDate){
+        g.latestDate = a.date + a.time;
+        g.name = a.name || g.name;
+      }
+    });
+  return Array.from(groups.values());
+}
+
+function renderClientList(){
+  const overlay = document.getElementById('clientListOverlay');
+  overlay.style.display = state.clientListOpen ? 'flex' : 'none';
+  if(!state.clientListOpen) return;
+
+  const query = state.clientListSearch.trim().toLowerCase();
+  const queryDigits = digitsOnly(state.clientListSearch);
+
+  let clients = buildClientGroups();
+
+  if(query || queryDigits){
+    clients = clients.filter(c => {
+      const nameMatch = query && c.name && c.name.toLowerCase().includes(query);
+      const phoneMatch = queryDigits && digitsOnly(c.phone).includes(queryDigits);
+      return nameMatch || phoneMatch;
+    });
+  }
+
+  // most recent visit first
+  clients.sort((a,b) => (b.latestDate || '').localeCompare(a.latestDate || ''));
+
+  document.getElementById('clientListCount').textContent =
+    `${clients.length} cliente${clients.length===1?'':'s'} único${clients.length===1?'':'s'}`;
+
+  const el = document.getElementById('clientListContent');
+  if(clients.length === 0){
+    el.innerHTML = `<div class="empty-note">Nenhum cliente encontrado.</div>`;
+    return;
+  }
+
+  el.innerHTML = clients.map(c => {
+    const lastVisit = c.visits.slice().sort((a,b) => (b.date+b.time).localeCompare(a.date+a.time))[0];
+    return `
+    <div class="client-row">
+      <div class="client-row-top">
+        <span class="client-row-name">${c.name && c.name.trim() ? escapeHtml(c.name) : 'Cliente sem nome'}</span>
+        <span class="client-row-visits">${c.visits.length} visita${c.visits.length===1?'':'s'}</span>
+      </div>
+      <div class="client-row-phone">${escapeHtml(c.phone)}</div>
+      <div class="client-row-last">Última visita: ${formatDatePretty(lastVisit.date)} às ${lastVisit.time}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderMonthSummary(){
+  const overlay = document.getElementById('monthSummaryOverlay');
+  overlay.style.display = state.monthSummaryOpen ? 'flex' : 'none';
+  if(!state.monthSummaryOpen) return;
+
+  const today = todayISO();
+  const [y, m] = today.split('-').map(Number);
+  const monthPrefix = `${y}-${String(m).padStart(2,'0')}`;
+
+  document.getElementById('monthSummarySub').textContent = `${MONTH_NAMES[m-1]} de ${y}`;
+
+  const monthAppts = state.appointmentsCache.filter(a => a.date && a.date.startsWith(monthPrefix) && a.status !== 'blocked');
+  const total = monthAppts.length;
+  const cancelled = monthAppts.filter(a => a.status === 'cancelled').length;
+  const completed = monthAppts.filter(a => a.status === 'completed').length;
+  const activeAppts = monthAppts.filter(a => a.status !== 'cancelled');
+
+  // count each individual service across all active appointments this month
+  const serviceCounts = {};
+  activeAppts.forEach(a => {
+    const list = Array.isArray(a.services) && a.services.length
+      ? a.services
+      : (a.service ? a.service.split(',').map(s => s.trim()) : []);
+    list.forEach(s => { if(s) serviceCounts[s] = (serviceCounts[s] || 0) + 1; });
+  });
+  let topService = '—';
+  let topCount = 0;
+  Object.entries(serviceCounts).forEach(([s, c]) => { if(c > topCount){ topCount = c; topService = s; } });
+
+  document.getElementById('monthSummaryContent').innerHTML = `
+    <div class="summary-stat-grid">
+      <div class="summary-stat-card">
+        <div class="summary-stat-num">${total}</div>
+        <div class="summary-stat-label">Agendamentos no mês</div>
+      </div>
+      <div class="summary-stat-card">
+        <div class="summary-stat-num">${completed}</div>
+        <div class="summary-stat-label">Finalizados</div>
+      </div>
+      <div class="summary-stat-card">
+        <div class="summary-stat-num">${cancelled}</div>
+        <div class="summary-stat-label">Cancelados</div>
+      </div>
+      <div class="summary-stat-card">
+        <div class="summary-stat-num">${topCount}</div>
+        <div class="summary-stat-label">${topCount > 0 ? escapeHtml(topService) + ' (mais pedido)' : 'Nenhum serviço ainda'}</div>
+      </div>
+    </div>
+  `;
+}
+
+// Builds a CSV file from every appointment on file and triggers a download —
+// works as an independent backup, outside of Supabase.
+function exportCsvData(){
+  const rows = state.appointmentsCache.slice().sort((a,b) => (a.date+a.time).localeCompare(b.date+b.time));
+  const headers = ['Data','Horário','Nome','Telefone','Serviço','Categoria','Status','Química usada','Origem','Criado em'];
+  const csvEscape = (val) => {
+    const s = (val === null || val === undefined) ? '' : String(val);
+    return '"' + s.replace(/"/g, '""') + '"';
+  };
+  const lines = [headers.map(csvEscape).join(',')];
+  rows.forEach(a => {
+    lines.push([
+      a.date || '', a.time || '', a.name || '', a.phone || '', a.service || '',
+      a.category || '', a.status || '', a.chemicalType || '', a.source || '', a.createdAt || ''
+    ].map(csvEscape).join(','));
+  });
+  const csvContent = '\uFEFF' + lines.join('\r\n'); // BOM so Excel opens accents correctly
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ivanildo-hair-agendamentos-${todayISO()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function renderFinalizeChemModal(){
   const overlay = document.getElementById('finalizeChemOverlay');
   overlay.style.display = state.finalizeChemOpen ? 'flex' : 'none';
@@ -2410,6 +2638,8 @@ function render(){
   renderFinalizeChemModal();
   renderOwnerMenu();
   renderGeneralHistory();
+  renderClientList();
+  renderMonthSummary();
 
   if(state.view === 'client'){
     if(state.successData){
@@ -2615,6 +2845,31 @@ document.addEventListener('click', async (e)=>{
   else if(action === 'close-general-history'){
     state.generalHistoryOpen = false;
     render();
+  }
+  else if(action === 'open-client-list'){
+    state.ownerMenuOpen = false;
+    state.clientListOpen = true;
+    state.clientListSearch = '';
+    render();
+    setTimeout(()=>{ const i = document.getElementById('clientListSearchInput'); if(i) i.focus(); }, 50);
+  }
+  else if(action === 'close-client-list'){
+    state.clientListOpen = false;
+    render();
+  }
+  else if(action === 'open-month-summary'){
+    state.ownerMenuOpen = false;
+    state.monthSummaryOpen = true;
+    render();
+  }
+  else if(action === 'close-month-summary'){
+    state.monthSummaryOpen = false;
+    render();
+  }
+  else if(action === 'export-csv-data'){
+    state.ownerMenuOpen = false;
+    render();
+    exportCsvData();
   }
   else if(action === 'exit-owner'){
     state.view = 'client';
@@ -2996,6 +3251,10 @@ document.addEventListener('input', (e)=>{
     state.generalHistorySearch = e.target.value;
     renderGeneralHistory();
   }
+  else if(action === 'input-client-list-search'){
+    state.clientListSearch = e.target.value;
+    renderClientList();
+  }
   else if(action === 'input-manual-date'){
     state.manualDate = e.target.value;
     state.manualTime = null;
@@ -3050,6 +3309,8 @@ async function init(){
         renderOwner();
         renderNotifBanner();
         renderGeneralHistory();
+        renderClientList();
+        renderMonthSummary();
       }
     }, 7000);
     return;
@@ -3094,6 +3355,8 @@ async function init(){
       renderOwner();
       renderNotifBanner();
       renderGeneralHistory();
+      renderClientList();
+      renderMonthSummary();
     }
   }, 7000);
 }
