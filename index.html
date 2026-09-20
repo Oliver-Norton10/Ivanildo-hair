@@ -50,6 +50,47 @@
     position:relative;
     padding-bottom:40px;
   }
+
+  /* Desktop layout for Ivanildo's screen only — the client screen stays
+     phone-width always, since clients book from their phones. This only
+     kicks in on wide screens (a real computer), and only while state.view
+     is 'owner' (body gets the .owner-mode class from render()). */
+  body.owner-mode #app{
+    max-width:480px;
+  }
+  @media (min-width: 900px){
+    body.owner-mode #app{
+      max-width:1180px;
+    }
+    .owner-grid{
+      display:grid;
+      grid-template-columns: 400px 1fr;
+      gap:24px;
+      align-items:start;
+    }
+    .owner-col-left{
+      position:sticky;
+      top:20px;
+    }
+    .owner-col-right{
+      min-width:0;
+    }
+    #ownerList{
+      display:grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap:14px;
+      align-items:start;
+    }
+    #ownerList .appt-card{
+      margin-bottom:0;
+    }
+    .week-strip{
+      display:grid;
+      grid-template-columns: repeat(7, 1fr);
+      overflow-x:visible;
+    }
+  }
+
   ::selection{background:var(--teal); color:#ffffff;}
   a{color:inherit;}
   button{font-family:inherit;}
@@ -1014,43 +1055,49 @@
 
       <div id="notifBanner"></div>
 
-      <div id="weekStrip" class="week-strip"></div>
+      <div class="owner-grid">
+        <div class="owner-col-left">
+          <div id="weekStrip" class="week-strip"></div>
 
-      <div class="owner-date">
-        <button class="refresh-btn" id="ownerRefreshBtn" title="Atualizar">⟳</button>
-      </div>
+          <div class="owner-date">
+            <button class="refresh-btn" id="ownerRefreshBtn" title="Atualizar">⟳</button>
+          </div>
 
-      <div class="owner-calendar-card">
-        <div class="cal-header">
-          <button class="cal-nav-btn" data-action="cal-prev-month">‹</button>
-          <span id="calMonthLabel" class="cal-month-label"></span>
-          <button class="cal-nav-btn" data-action="cal-next-month">›</button>
+          <div class="owner-calendar-card">
+            <div class="cal-header">
+              <button class="cal-nav-btn" data-action="cal-prev-month">‹</button>
+              <span id="calMonthLabel" class="cal-month-label"></span>
+              <button class="cal-nav-btn" data-action="cal-next-month">›</button>
+            </div>
+            <div class="cal-weekdays">
+              <span>D</span><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span>
+            </div>
+            <div id="calGrid" class="cal-grid"></div>
+            <div class="cal-legend">
+              <div class="cal-legend-row"><span class="cal-legend-dot pending"></span> Tem atendimento marcado</div>
+              <div class="cal-legend-row"><span class="cal-legend-dot done"></span> Todos os atendimentos finalizados</div>
+            </div>
+          </div>
+
+          <div class="owner-block-row">
+            <button class="btn-manual-booking" data-action="open-manual-booking" style="flex:1 1 100%;">📞 Agendamento por telefone</button>
+          </div>
+
+          <div class="owner-block-row">
+            <button class="btn-block-toggle" data-action="toggle-block-mode" style="flex:1 1 100%;">＋ Bloquear horário</button>
+          </div>
+          <div class="owner-block-row">
+            <button class="btn-block-day" data-action="block-whole-day">Bloquear o dia inteiro</button>
+            <button class="btn-block-day" data-action="unblock-whole-day">Desbloquear o dia inteiro</button>
+          </div>
+          <div id="ownerBlockPanel"></div>
         </div>
-        <div class="cal-weekdays">
-          <span>D</span><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span>
-        </div>
-        <div id="calGrid" class="cal-grid"></div>
-        <div class="cal-legend">
-          <div class="cal-legend-row"><span class="cal-legend-dot pending"></span> Tem atendimento marcado</div>
-          <div class="cal-legend-row"><span class="cal-legend-dot done"></span> Todos os atendimentos finalizados</div>
+
+        <div class="owner-col-right">
+          <div class="day-count" id="ownerDayCount"></div>
+          <div id="ownerList"></div>
         </div>
       </div>
-
-      <div class="owner-block-row">
-        <button class="btn-manual-booking" data-action="open-manual-booking" style="flex:1 1 100%;">📞 Agendamento por telefone</button>
-      </div>
-
-      <div class="owner-block-row">
-        <button class="btn-block-toggle" data-action="toggle-block-mode" style="flex:1 1 100%;">＋ Bloquear horário</button>
-      </div>
-      <div class="owner-block-row">
-        <button class="btn-block-day" data-action="block-whole-day">Bloquear o dia inteiro</button>
-        <button class="btn-block-day" data-action="unblock-whole-day">Desbloquear o dia inteiro</button>
-      </div>
-      <div id="ownerBlockPanel"></div>
-
-      <div class="day-count" id="ownerDayCount"></div>
-      <div id="ownerList"></div>
     </section>
   </main>
 
@@ -2211,6 +2258,7 @@ function render(){
   document.getElementById('viewClient').classList.toggle('visible', state.view==='client');
   document.getElementById('viewHistory').classList.toggle('visible', state.view==='history');
   document.getElementById('viewOwner').classList.toggle('visible', state.view==='owner');
+  document.body.classList.toggle('owner-mode', state.view==='owner');
 
   const overlay = document.getElementById('ownerGateOverlay');
   overlay.style.display = state.ownerGateOpen ? 'flex' : 'none';
