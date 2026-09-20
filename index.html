@@ -1147,7 +1147,6 @@
               <button class="owner-menu-item" data-action="open-general-history">🔍 Buscar cliente / Histórico geral</button>
               <button class="owner-menu-item" data-action="open-client-list">👥 Lista de clientes</button>
               <button class="owner-menu-item" data-action="open-month-summary">📊 Resumo do mês</button>
-              <button class="owner-menu-item" data-action="export-csv-data">⬇️ Exportar dados (CSV)</button>
             </div>
           </div>
           <button class="owner-exit-btn" data-action="exit-owner">Sair</button>
@@ -2144,34 +2143,6 @@ function renderMonthSummary(){
   `;
 }
 
-// Builds a CSV file from every appointment on file and triggers a download —
-// works as an independent backup, outside of Supabase.
-function exportCsvData(){
-  const rows = state.appointmentsCache.slice().sort((a,b) => (a.date+a.time).localeCompare(b.date+b.time));
-  const headers = ['Data','Horário','Nome','Telefone','Serviço','Categoria','Status','Química usada','Origem','Criado em'];
-  const csvEscape = (val) => {
-    const s = (val === null || val === undefined) ? '' : String(val);
-    return '"' + s.replace(/"/g, '""') + '"';
-  };
-  const lines = [headers.map(csvEscape).join(',')];
-  rows.forEach(a => {
-    lines.push([
-      a.date || '', a.time || '', a.name || '', a.phone || '', a.service || '',
-      a.category || '', a.status || '', a.chemicalType || '', a.source || '', a.createdAt || ''
-    ].map(csvEscape).join(','));
-  });
-  const csvContent = '\uFEFF' + lines.join('\r\n'); // BOM so Excel opens accents correctly
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `ivanildo-hair-agendamentos-${todayISO()}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
 function renderFinalizeChemModal(){
   const overlay = document.getElementById('finalizeChemOverlay');
   overlay.style.display = state.finalizeChemOpen ? 'flex' : 'none';
@@ -2865,11 +2836,6 @@ document.addEventListener('click', async (e)=>{
   else if(action === 'close-month-summary'){
     state.monthSummaryOpen = false;
     render();
-  }
-  else if(action === 'export-csv-data'){
-    state.ownerMenuOpen = false;
-    render();
-    exportCsvData();
   }
   else if(action === 'exit-owner'){
     state.view = 'client';
