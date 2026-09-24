@@ -1820,40 +1820,13 @@ function takenTimesForDate(dateISO){
     .map(a => a.time);
 }
 
-// Serviços femininos que podem ter mais de um cliente marcado no mesmo
-// horário (a critério do Ivanildo, olhando o painel de ocupação — o
-// sistema não trava um número máximo, só ajuda ele a acompanhar).
-const SHARED_SLOT_SERVICES = [
-  'Escova', 'Pintura',
-  'Alisamento (avaliação prévia)',
-  'Tratamento para cabelos crespos (avaliação prévia)',
-  'Selante (avaliação prévia)',
-  'Permanente (avaliação prévia)'
-];
-
-function getApptServiceList(a){
-  return Array.isArray(a.services) && a.services.length
-    ? a.services
-    : (a.service ? a.service.split(',').map(s => s.trim()).filter(Boolean) : []);
-}
-
-// A masculino appointment is ALWAYS exclusive, regardless of which
-// services were picked (even though "Pintura" also exists as a
-// masculino service name — this function is only ever consulted for
-// feminino bookings, on purpose, to avoid that name collision).
-function isSharedSlotServiceList(list){
-  if(!list || list.length === 0) return false;
-  return list.every(s => SHARED_SLOT_SERVICES.includes(s));
-}
-
 // Decides whether a NEW booking (category + chosen services) can use
 // date+time, given what's already on the books:
 // - a blocked slot always wins, for any category
 // - masculino is always one-client-per-slot, independent of feminino
-// - feminino: an exclusive service (corte, luzes/mechas, etc.) needs
-//   the whole slot to itself; a "shared" service (escova, pintura, ou
-//   os que exigem avaliação prévia) can share the slot with other
-//   shared bookings, but never with an exclusive one
+// - feminino has NO limit set by the system, for any service — Ivanildo
+//   decides on the spot, per case, how many clients he can actually take
+//   at a given hour (the occupancy panel below helps him track it)
 function isSlotTakenFor(date, time, category, servicesList, excludeId){
   const sameSlot = state.appointmentsCache.filter(a =>
     a.date === date && a.time === time && a.status !== 'cancelled' && a.id !== excludeId
@@ -1864,21 +1837,15 @@ function isSlotTakenFor(date, time, category, servicesList, excludeId){
     return sameSlot.some(a => a.category === 'masculino');
   }
 
-  const feminineHere = sameSlot.filter(a => a.category === 'feminino');
-  const newIsShared = isSharedSlotServiceList(servicesList);
-  if(!newIsShared){
-    return feminineHere.length > 0;
-  }
-  return feminineHere.some(a => !isSharedSlotServiceList(getApptServiceList(a)));
+  return false; // feminino: never blocked by another feminino booking
 }
 
-// How many "shared" feminino clients are already stacked into this exact
-// date+time — shown to Ivanildo so he can judge, case by case, whether
-// he can still take another one at that hour.
+// How many feminino clients are already stacked into this exact date+time
+// — shown to Ivanildo so he can judge, case by case, whether he can still
+// take another one at that hour.
 function sharedSlotCount(date, time){
   return state.appointmentsCache.filter(a =>
-    a.date === date && a.time === time && a.status !== 'cancelled' &&
-    a.category === 'feminino' && isSharedSlotServiceList(getApptServiceList(a))
+    a.date === date && a.time === time && a.status !== 'cancelled' && a.category === 'feminino'
   ).length;
 }
 
@@ -2805,7 +2772,7 @@ async function handleConfirm(){
   let apptId;
   let isReschedule = false;
   let ok = false;
-  const exclusiveSlot = state.category === 'masculino' ? true : !isSharedSlotServiceList(state.services);
+  const exclusiveSlot = state.category === 'masculino';
 
   if(state.rescheduleApptId){
     const exists = latest.some(a => a.id === state.rescheduleApptId);
@@ -3212,7 +3179,7 @@ document.addEventListener('click', async (e)=>{
       source: 'manual',
       confirmedAt: new Date().toISOString(),
       completedAt: null,
-      exclusiveSlot: state.manualCategory === 'masculino' ? true : !isSharedSlotServiceList(state.manualServices)
+      exclusiveSlot: state.manualCategory === 'masculino'
     });
 
     if(!created){
