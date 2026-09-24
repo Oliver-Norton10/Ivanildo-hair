@@ -2275,6 +2275,11 @@ function renderHistory(){
     return;
   }
 
+  if(state.historyResults === 'invalid'){
+    resultsEl.innerHTML = `<div class="empty-note">Esse campo é para o número de telefone (com DDD), não para o nome. Digite o telefone usado no agendamento, ex: (16) 99999-9999.</div>`;
+    return;
+  }
+
   if(state.historyResults.length === 0){
     resultsEl.innerHTML = `<div class="empty-note">Nenhum agendamento encontrado para este telefone.</div>`;
     return;
@@ -2988,7 +2993,7 @@ document.addEventListener('click', async (e)=>{
   else if(action === 'search-history'){
     const val = document.getElementById('historyPhoneInput').value.trim();
     if(digitsOnly(val).length < 10){
-      state.historyResults = [];
+      state.historyResults = 'invalid';
       render();
       return;
     }
