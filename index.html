@@ -3348,25 +3348,22 @@ async function init(){
     }
     const cancelGateBtn = document.querySelector('[data-action="close-owner-gate"]');
     if(cancelGateBtn) cancelGateBtn.style.display = 'none';
-    document.querySelector('.modal-sub').textContent = 'Digite o código para ver a agenda do salão.';
+    // este link é o próprio código de acesso — não pede mais PIN nunca
     state.view = 'owner';
-    state.ownerGateOpen = true;
+    state.ownerGateOpen = false;
     state.appointmentsCache = await loadAppointments();
     state.knownApptIds = new Set(state.appointmentsCache.map(a => a.id));
     render();
-    setTimeout(()=>{ const i = document.getElementById('ownerPinInput'); if(i) i.focus(); }, 50);
     setInterval(async ()=>{
       const fresh = await loadAppointmentsFresh();
       if(fresh === null) return; // brief hiccup — keep showing current data
       notifyIfNewAppointments(fresh);
       state.appointmentsCache = fresh;
-      if(!state.ownerGateOpen){
-        renderOwner();
-        renderNotifBanner();
-        renderGeneralHistory();
-        renderClientList();
-        renderMonthSummary();
-      }
+      renderOwner();
+      renderNotifBanner();
+      renderGeneralHistory();
+      renderClientList();
+      renderMonthSummary();
     }, 7000);
     return;
   }
