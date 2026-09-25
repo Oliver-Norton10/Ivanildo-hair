@@ -1348,9 +1348,14 @@
 /* =========================================================
    CONFIG
    ========================================================= */
-// Substitua pelo número real do Ivanildo, formato: código do país + DDD + número (somente dígitos)
+// Número do Ivanildo (contato da área MASCULINA), formato: código do país + DDD + número (somente dígitos)
 const SALON_WHATSAPP = '5516981640118';
+// Número da profissional responsável pela área FEMININA. Enquanto não for
+// preenchido, o app usa o número do Ivanildo como reserva pra não quebrar nada.
+// Para configurar: troque o texto entre aspas pelo número, no mesmo formato acima.
+const SALON_WHATSAPP_FEMININO = '5516997046031';
 const SALON_NAME = 'Ivanildo';
+const SALON_NAME_FEMININO = 'nossa equipe';
 const OPEN_TIME = '08:00';
 const CLOSE_TIME = '18:00';
 const SLOT_MINUTES = 30;
@@ -1949,20 +1954,32 @@ function renderClientFlow(){
     </button>
 
     <a class="btn-whatsapp" id="waPreBooking" target="_blank" rel="noopener">
-      ${waIconSvg()} Falar com ${SALON_NAME} no WhatsApp
+      ${waIconSvg()} Falar com ${getContactName(state.category)} no WhatsApp
     </a>
   `;
 
   document.getElementById('waPreBooking').href = buildWaLink(
-    `Olá ${SALON_NAME}, gostaria de informações sobre agendamento.`
+    `Olá, gostaria de informações sobre agendamento.`,
+    state.category
   );
 }
 
 function waIconSvg(){
   return `<svg width="19" height="19" viewBox="0 0 24 24" fill="#0b1c10" style="flex-shrink:0"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.15-.174.199-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12.05 2C6.579 2 2.148 6.43 2.148 11.9c0 1.85.51 3.583 1.397 5.07L2 22l5.19-1.52a9.86 9.86 0 0 0 4.86 1.267h.004c5.47 0 9.9-4.43 9.9-9.898C21.955 6.43 17.52 2 12.05 2zm0 17.905h-.003a8.24 8.24 0 0 1-4.19-1.148l-.3-.178-3.107.91.917-3.07-.196-.315a8.216 8.216 0 0 1-1.264-4.394c0-4.554 3.706-8.26 8.267-8.26 4.554 0 8.257 3.706 8.257 8.26 0 4.556-3.703 8.195-8.38 8.195z"/></svg>`;
 }
-function buildWaLink(message){
-  return `https://wa.me/${SALON_WHATSAPP}?text=${encodeURIComponent(message)}`;
+// Retorna o número certo de WhatsApp pra categoria: masculino sempre fala
+// com o Ivanildo, feminino fala com a profissional responsável por essa área
+// (cai pro número do Ivanildo se o dela ainda não tiver sido configurado).
+function getContactNumber(category){
+  if(category === 'feminino' && SALON_WHATSAPP_FEMININO) return SALON_WHATSAPP_FEMININO;
+  return SALON_WHATSAPP;
+}
+function getContactName(category){
+  if(category === 'feminino' && SALON_WHATSAPP_FEMININO) return SALON_NAME_FEMININO;
+  return SALON_NAME;
+}
+function buildWaLink(message, category){
+  return `https://wa.me/${getContactNumber(category)}?text=${encodeURIComponent(message)}`;
 }
 function escapeHtml(s){
   return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1977,9 +1994,10 @@ function renderSuccess(){
   const el = document.getElementById('clientSuccess');
   el.style.display = 'block';
 
+  const contactName = getContactName(d.category);
   const waMsg = d.rescheduled
-    ? `Olá ${SALON_NAME}, acabei de remarcar meu agendamento para ${formatDatePretty(d.date)} às ${d.time}.`
-    : `Olá ${SALON_NAME}, acabei de agendar um horário para ${formatDatePretty(d.date)} às ${d.time}.`;
+    ? `Olá ${contactName}, acabei de remarcar meu agendamento para ${formatDatePretty(d.date)} às ${d.time}.`
+    : `Olá ${contactName}, acabei de agendar um horário para ${formatDatePretty(d.date)} às ${d.time}.`;
 
   const myAppt = state.appointmentsCache.find(a => a.id === state.myApptId);
   const isConfirmed = myAppt && myAppt.status === 'confirmed';
@@ -2008,8 +2026,8 @@ function renderSuccess(){
         <div class="receipt-row"><span class="k">Data</span><span class="v">${formatDatePretty(d.date)}</span></div>
         <div class="receipt-row"><span class="k">Horário</span><span class="v">${d.time}</span></div>
       </div>
-      <a class="btn-whatsapp" href="${buildWaLink(waMsg)}" target="_blank" rel="noopener">
-        ${waIconSvg()} Avisar ${SALON_NAME} no WhatsApp
+      <a class="btn-whatsapp" href="${buildWaLink(waMsg, d.category)}" target="_blank" rel="noopener">
+        ${waIconSvg()} Avisar ${contactName} no WhatsApp
       </a>
       <button class="btn-primary" data-action="go-home" style="margin-top:10px; display:flex; align-items:center; justify-content:center; gap:8px;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9.5V21h14V9.5"/></svg>
@@ -2827,7 +2845,7 @@ async function handleConfirm(){
 
   state.myApptId = apptId;
   state.rescheduleApptId = null;
-  state.successData = { name, service: serviceLabel, date: state.date, time: state.time, rescheduled: isReschedule };
+  state.successData = { name, service: serviceLabel, date: state.date, time: state.time, rescheduled: isReschedule, category: state.category };
   setRememberedPhone(phone);
   setRememberedName(name);
   state.hasRememberedData = true;
