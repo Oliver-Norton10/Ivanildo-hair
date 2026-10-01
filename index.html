@@ -1475,6 +1475,7 @@ function maxDateISO(){
   d.setDate(d.getDate()+60);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
+const CLOSED_DAY_NOTICE_HTML = `<div class="empty-note">${SALON_NAME} está de folga aos domingos e segundas-feiras (em dezembro atende normalmente nas segundas). Escolha outro dia.</div>`;
 function isClosedDate(iso){
   if(!iso) return false;
   const [y,m,d] = iso.split('-').map(Number);
@@ -1873,7 +1874,7 @@ function buildSlotsHtml(){
     return `<div class="empty-note">Escolha uma data para ver os horários disponíveis.</div>`;
   }
   if(isClosedDate(state.date)){
-    return `<div class="empty-note">Fechado neste dia (domingo). Escolha outra data.</div>`;
+    return CLOSED_DAY_NOTICE_HTML;
   }
   const takenNow = allSlots.filter(s => isSlotTakenFor(state.date, s, state.category, state.services, state.rescheduleApptId));
   const availableCount = allSlots.length - takenNow.length;
@@ -2484,7 +2485,7 @@ function buildOwnerBlockSlotsHtml(){
   const allSlots = !isClosedDate(state.ownerDate) ? generateAllSlots() : [];
   const taken = takenTimesForDate(state.ownerDate);
   if(isClosedDate(state.ownerDate)){
-    return `<div class="empty-note">Fechado neste dia (domingo).</div>`;
+    return CLOSED_DAY_NOTICE_HTML;
   }
   return '<div class="slots-grid">' + allSlots.map(s=>{
     const isTaken = taken.includes(s);
@@ -2499,7 +2500,7 @@ function buildManualSlotsHtml(){
     return `<div class="empty-note">Escolha uma data.</div>`;
   }
   if(isClosedDate(state.manualDate)){
-    return `<div class="empty-note">Fechado neste dia (domingo).</div>`;
+    return CLOSED_DAY_NOTICE_HTML;
   }
   const allSlots = generateAllSlots();
   const isTakenList = allSlots.map(s => isSlotTakenFor(state.manualDate, s, state.manualCategory, state.manualServices, null));
@@ -3316,7 +3317,16 @@ document.addEventListener('input', (e)=>{
   else if(action === 'input-phone'){ state.phone = e.target.value; }
   else if(action === 'input-history-phone'){ state.historyPhone = e.target.value; }
   else if(action === 'input-date'){
-    state.date = e.target.value;
+    const picked = e.target.value;
+    if(isClosedDate(picked)){
+      // não deixa a data fechada "pegar": devolve o campo pro valor anterior
+      // e mostra o aviso de folga, sem precisar o cliente escolher de novo
+      e.target.value = state.date || '';
+      const container = document.getElementById('slotsContainer');
+      if(container) container.innerHTML = CLOSED_DAY_NOTICE_HTML;
+      return;
+    }
+    state.date = picked;
     state.time = null;
     if(state.error){
       state.error = '';
@@ -3338,7 +3348,14 @@ document.addEventListener('input', (e)=>{
     renderClientList();
   }
   else if(action === 'input-manual-date'){
-    state.manualDate = e.target.value;
+    const picked = e.target.value;
+    if(isClosedDate(picked)){
+      e.target.value = state.manualDate || '';
+      const container = document.getElementById('manualSlotsContainer');
+      if(container) container.innerHTML = CLOSED_DAY_NOTICE_HTML;
+      return;
+    }
+    state.manualDate = picked;
     state.manualTime = null;
     const container = document.getElementById('manualSlotsContainer');
     if(container) container.innerHTML = buildManualSlotsHtml();
