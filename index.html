@@ -1359,7 +1359,11 @@ const SALON_NAME_FEMININO = 'nossa equipe';
 const OPEN_TIME = '08:00';
 const CLOSE_TIME = '18:00';
 const SLOT_MINUTES = 30;
-const CLOSED_WEEKDAYS = [0]; // 0 = domingo
+const CLOSED_WEEKDAYS = [0, 1]; // 0 = domingo, 1 = segunda
+// Em dezembro o movimento aumenta e o Ivanildo passa a atender também
+// nas segundas-feiras. Ele continua podendo bloquear um dia específico
+// manualmente (botão "Bloquear dia") se quiser folgar numa segunda de dezembro.
+const OPEN_MONDAYS_IN_DECEMBER = true;
 // Código de acesso da área do proprietário. Por segurança, NÃO fica em
 // texto puro no código — fica como hash SHA-256, então quem abrir "ver
 // código-fonte" não consegue ler o PIN diretamente.
@@ -1475,7 +1479,11 @@ function isClosedDate(iso){
   if(!iso) return false;
   const [y,m,d] = iso.split('-').map(Number);
   const dt = new Date(y, m-1, d);
-  return CLOSED_WEEKDAYS.includes(dt.getDay());
+  const weekday = dt.getDay();
+  if(!CLOSED_WEEKDAYS.includes(weekday)) return false;
+  // segunda-feira (1) em dezembro (mês 12) fica aberta, por padrão
+  if(weekday === 1 && m === 12 && OPEN_MONDAYS_IN_DECEMBER) return false;
+  return true;
 }
 function formatDatePretty(iso){
   if(!iso) return '';
@@ -2433,7 +2441,7 @@ function renderOwnerCalendar(){
     const iso = `${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const weekday = new Date(y, m-1, day).getDay();
     const classes = ['cal-day'];
-    if(weekday === 0) classes.push('is-sunday');
+    if(isClosedDate(iso)) classes.push('is-sunday'); // reaproveita o estilo "fechado" (domingo, e segunda fora de dezembro)
     if(datesActive.has(iso)) classes.push('has-appt-pending');
     else if(datesDoneOnly.has(iso)) classes.push('has-appt-done');
     if(iso === today) classes.push('today');
@@ -2456,7 +2464,7 @@ function renderWeekStrip(){
     offset++;
     const [y,m,d] = iso.split('-').map(Number);
     const dt = new Date(y, m-1, d);
-    if(dt.getDay() === 0) continue; // pula domingo — salão fechado, não conta como um dos 7
+    if(isClosedDate(iso)) continue; // pula dia fechado (domingo, e segunda fora de dezembro) — não conta como um dos 7
     const count = state.appointmentsCache.filter(a =>
       a.date === iso && (a.status === 'pending' || a.status === 'confirmed')
     ).length;
