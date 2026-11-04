@@ -995,6 +995,20 @@
     font-size:12px; font-weight:600; background:var(--bg-elev);
     border-radius:999px; padding:3px 10px; color:inherit;
   }
+  .owner-tabs{ display:flex; gap:10px; margin:6px 0 16px; flex-wrap:wrap; }
+  .owner-tab{
+    flex:1; min-width:140px; display:flex; align-items:center; justify-content:center; gap:8px;
+    padding:12px 14px; border-radius:12px; border:1.5px solid var(--border, #d9dee3);
+    background:var(--bg-elev); color:var(--text); font-weight:600; font-size:14px; cursor:pointer;
+  }
+  .owner-tab .tab-count{
+    font-size:12px; font-weight:700; border-radius:999px; padding:2px 9px;
+    background:rgba(0,0,0,.07); color:inherit;
+  }
+  .owner-tab.active{ background:var(--teal); border-color:var(--teal); color:#fff; }
+  .owner-tab.active .tab-count{ background:rgba(255,255,255,.25); }
+  .owner-tab.is-fem.active{ background:#c9689a; border-color:#c9689a; }
+  .owner-tab.is-blocks.active{ background:#6b7580; border-color:#6b7580; }
   .owner-section-empty{ font-size:13px; color:var(--muted); padding:6px 2px 4px; }
   .day-count{
     font-size:12px; color:var(--muted); margin-bottom:14px;
@@ -1471,6 +1485,7 @@ let state = {
   appointmentsCache: [],
   ownerDate: todayISO(),
   ownerBlockMode: false,
+  ownerTab: 'masculino',
   selectedBlockTimes: [],
   ownerGateOpen: false,
   ownerGateError: false,
@@ -2638,10 +2653,6 @@ function renderOwner(){
     `<b>${dayAppts.length}</b> agendamento${dayAppts.length===1?'':'s'} em ${formatDatePretty(state.ownerDate)}`;
 
   const listEl = document.getElementById('ownerList');
-  if(dayEntries.length === 0){
-    listEl.innerHTML = `<div class="empty-day">Nenhum agendamento para este dia ainda.</div>`;
-    return;
-  }
 
   const buildCard = (a) => {
     if(a.status === 'blocked'){
@@ -2696,21 +2707,32 @@ function renderOwner(){
   const fem  = apptsOnly.filter(a => a.category !== 'masculino');
   const blocks = dayEntries.filter(a => a.status === 'blocked');
 
-  const section = (title, cls, list, emptyText) => `
-    <div class="owner-section">
-      <div class="owner-section-head ${cls}">
-        <span>${title}</span>
-        <span class="sec-count">${list.length}</span>
-      </div>
-      ${list.length
-        ? `<div class="owner-section-grid">${list.map(buildCard).join('')}</div>`
-        : `<div class="owner-section-empty">${emptyText}</div>`}
-    </div>`;
+  // só mostra a aba escolhida; se a aba de bloqueados sumir, volta pra masculino
+  if(state.ownerTab === 'blocks' && blocks.length === 0) state.ownerTab = 'masculino';
+  const tab = state.ownerTab;
 
-  listEl.innerHTML =
-    section('💈 Barbearia (Masculino)', '', masc, 'Nenhum agendamento masculino neste dia.') +
-    section('✂️ Cabelo (Feminino)', 'is-fem', fem, 'Nenhum agendamento feminino neste dia.') +
-    (blocks.length ? section('🔒 Horários bloqueados', 'is-blocks', blocks, '') : '');
+  const tabBtn = (key, label, cls, n) => `
+    <button class="owner-tab ${cls} ${tab===key?'active':''}" data-action="owner-tab" data-tab="${key}">
+      <span>${label}</span><span class="tab-count">${n}</span>
+    </button>`;
+
+  const lists = { masculino: masc, feminino: fem, blocks: blocks };
+  const emptyText = {
+    masculino: 'Nenhum agendamento masculino neste dia.',
+    feminino: 'Nenhum agendamento feminino neste dia.',
+    blocks: 'Nenhum horário bloqueado neste dia.'
+  };
+  const cur = lists[tab];
+
+  listEl.innerHTML = `
+    <div class="owner-tabs">
+      ${tabBtn('masculino', '💈 Barbearia', '', masc.length)}
+      ${tabBtn('feminino', '✂️ Feminino', 'is-fem', fem.length)}
+      ${blocks.length ? tabBtn('blocks', '🔒 Bloqueados', 'is-blocks', blocks.length) : ''}
+    </div>
+    ${cur.length
+      ? `<div class="owner-section-grid">${cur.map(buildCard).join('')}</div>`
+      : `<div class="owner-section-empty">${emptyText[tab]}</div>`}`;
 }
 
 /* =========================================================
@@ -3153,6 +3175,10 @@ document.addEventListener('click', async (e)=>{
     const id = t.dataset.id;
     await updateAppointmentRow(id, { status: 'cancelled' });
     render();
+  }
+  else if(action === 'owner-tab'){
+    state.ownerTab = t.dataset.tab;
+    renderOwner();
   }
   else if(action === 'select-week-day'){
     state.ownerDate = t.dataset.date;
