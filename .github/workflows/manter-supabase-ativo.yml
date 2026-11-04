@@ -1,0 +1,17 @@
+name: Manter Supabase ativo
+
+on:
+  schedule:
+    - cron: '0 12 * * *'   # todo dia às 9h (horário de Brasília)
+  workflow_dispatch:        # permite rodar manualmente pelo botão "Run workflow"
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar o banco
+        run: |
+          curl -sS -f -o /dev/null -w "HTTP %{http_code}\n" \
+            "https://qyrewewvbchsxwwiyoku.supabase.co/rest/v1/appointments?select=id&limit=1" \
+            -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF5cmV3ZXd2YmNoc3h3d2l5b2t1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjAxOTcsImV4cCI6MjEwMzc5NjE5N30.TIbJOoqvHfaT0KVnasGZfGBU0k_Ipt3IBNPJLaNbSX8" \
+            -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF5cmV3ZXd2YmNoc3h3d2l5b2t1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjAxOTcsImV4cCI6MjEwMzc5NjE5N30.TIbJOoqvHfaT0KVnasGZfGBU0k_Ipt3IBNPJLaNbSX8"
