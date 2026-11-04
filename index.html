@@ -75,7 +75,7 @@
     .owner-col-right{
       min-width:0;
     }
-    #ownerList{
+    .owner-section-grid{
       display:grid;
       grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
       gap:14px;
@@ -982,6 +982,20 @@
     cursor:pointer;
     display:flex; align-items:center; justify-content:center;
   }
+  .owner-section{ margin-bottom:22px; }
+  .owner-section-head{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    margin:4px 0 12px; padding-bottom:8px;
+    border-bottom:2px solid var(--teal);
+    font-weight:700; font-size:15px; color:var(--teal-dim);
+  }
+  .owner-section-head.is-fem{ border-bottom-color:#c9689a; color:#a24b7b; }
+  .owner-section-head.is-blocks{ border-bottom-color:var(--muted); color:var(--muted); }
+  .owner-section-head .sec-count{
+    font-size:12px; font-weight:600; background:var(--bg-elev);
+    border-radius:999px; padding:3px 10px; color:inherit;
+  }
+  .owner-section-empty{ font-size:13px; color:var(--muted); padding:6px 2px 4px; }
   .day-count{
     font-size:12px; color:var(--muted); margin-bottom:14px;
   }
@@ -2629,7 +2643,7 @@ function renderOwner(){
     return;
   }
 
-  listEl.innerHTML = dayEntries.map(a => {
+  const buildCard = (a) => {
     if(a.status === 'blocked'){
       return `
       <div class="appt-card is-blocked">
@@ -2675,7 +2689,28 @@ function renderOwner(){
       </div>
       ${hasPhone ? `<button class="btn-secondary" style="margin-top:8px;" data-action="view-client-history" data-phone="${escapeHtml(a.phone)}" data-name="${escapeHtml(a.name || '')}">📋 Ver histórico deste cliente</button>` : ''}
     </div>`;
-  }).join('');
+  };
+
+  const apptsOnly = dayEntries.filter(a => a.status !== 'blocked');
+  const masc = apptsOnly.filter(a => a.category === 'masculino');
+  const fem  = apptsOnly.filter(a => a.category !== 'masculino');
+  const blocks = dayEntries.filter(a => a.status === 'blocked');
+
+  const section = (title, cls, list, emptyText) => `
+    <div class="owner-section">
+      <div class="owner-section-head ${cls}">
+        <span>${title}</span>
+        <span class="sec-count">${list.length}</span>
+      </div>
+      ${list.length
+        ? `<div class="owner-section-grid">${list.map(buildCard).join('')}</div>`
+        : `<div class="owner-section-empty">${emptyText}</div>`}
+    </div>`;
+
+  listEl.innerHTML =
+    section('💈 Barbearia (Masculino)', '', masc, 'Nenhum agendamento masculino neste dia.') +
+    section('✂️ Cabelo (Feminino)', 'is-fem', fem, 'Nenhum agendamento feminino neste dia.') +
+    (blocks.length ? section('🔒 Horários bloqueados', 'is-blocks', blocks, '') : '');
 }
 
 /* =========================================================
