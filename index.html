@@ -1225,6 +1225,10 @@
             <button class="btn-manual-booking" data-action="open-manual-booking" style="flex:1 1 100%;">📞 Agendamento por telefone</button>
           </div>
 
+          <div class="owner-block-row" style="flex-direction:column; align-items:stretch; gap:6px;">
+            <label class="field-label" style="margin:0;">Bloquear para:</label>
+            <div id="blockScopeRow" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+          </div>
           <div class="owner-block-row">
             <button class="btn-block-toggle" data-action="toggle-block-mode" style="flex:1 1 100%;">＋ Bloquear horário</button>
           </div>
@@ -1477,6 +1481,7 @@ let state = {
   appointmentsCache: [],
   ownerDate: todayISO(),
   ownerBlockMode: false,
+  blockScope: 'masculino', // pra quem o bloqueio vale: masculino | feminino | ambos
   ownerTab: 'masculino',
   selectedBlockTimes: [],
   ownerGateOpen: false,
@@ -1749,19 +1754,27 @@ async function deleteAppointmentRow(id){
 
 // Deletes every BLOCKED row for a given date in one shot (used by
 // "Desbloquear o dia inteiro")
-async function deleteBlockedForDate(date){
+// quais bloqueios "Desbloquear o dia inteiro" remove: Barbearia só os da barbearia,
+// Feminino só os femininos, Ambos remove todos (inclusive os antigos sem categoria)
+function blockMatchesScope(block, scope){
+  return scope === 'ambos' || block.category === scope;
+}
+async function deleteBlockedForDate(date, scope){
+  scope = scope || 'ambos';
   if(HAS_SUPABASE){
     try{
-      const { error } = await withTimeout(sb.from('appointments').delete().eq('date', date).eq('status', 'blocked'));
+      let q = sb.from('appointments').delete().eq('date', date).eq('status', 'blocked');
+      if(scope !== 'ambos') q = q.eq('category', scope);
+      const { error } = await withTimeout(q);
       if(error) throw error;
-      if(state.appointmentsCache) state.appointmentsCache = state.appointmentsCache.filter(a => !(a.date === date && a.status === 'blocked'));
+      if(state.appointmentsCache) state.appointmentsCache = state.appointmentsCache.filter(a => !(a.date === date && a.status === 'blocked' && blockMatchesScope(a, scope)));
       return true;
     }catch(e){
       console.error('Supabase bulk delete failed, falling back to local storage:', e);
     }
   }
   const latest = fallbackBaseList() || await loadAppointments();
-  const updated = latest.filter(a => !(a.date === date && a.status === 'blocked'));
+  const updated = latest.filter(a => !(a.date === date && a.status === 'blocked' && blockMatchesScope(a, scope)));
   const ok = await saveWholeListFallback(updated);
   if(ok) state.appointmentsCache = updated;
   return ok;
@@ -1854,6 +1867,27 @@ function takenTimesForDate(dateISO){
     .filter(a => a.date === dateISO && a.status !== 'cancelled')
     .map(a => a.time);
 }
+// Bloqueios valem por área: category 'masculino' bloqueia só a barbearia,
+// 'feminino' só a área feminina, e sem categoria (null) vale pras duas
+// (é o caso dos bloqueios antigos e da opção "Ambos").
+function blockAppliesTo(block, category){
+  return !block.category || block.category === category;
+}
+function blockScopeLabel(cat){
+  return cat === 'masculino' ? '💈 Barbearia' : cat === 'feminino' ? '✂️ Feminino' : 'Barbearia e Feminino';
+}
+// Horários que NÃO dá pra bloquear no escopo escolhido (já ocupados por
+// agendamento da área ou já bloqueados pra ela).
+function takenTimesForScope(dateISO, scope){
+  return state.appointmentsCache
+    .filter(a => a.date === dateISO && a.status !== 'cancelled')
+    .filter(a => {
+      if(scope === 'ambos') return true;
+      if(a.status === 'blocked') return blockAppliesTo(a, scope);
+      return a.category === scope;
+    })
+    .map(a => a.time);
+}
 
 // Decides whether a NEW booking (category + chosen services) can use
 // date+time, given what's already on the books:
@@ -1866,7 +1900,7 @@ function isSlotTakenFor(date, time, category, servicesList, excludeId){
   const sameSlot = state.appointmentsCache.filter(a =>
     a.date === date && a.time === time && a.status !== 'cancelled' && a.id !== excludeId
   );
-  if(sameSlot.some(a => a.status === 'blocked')) return true;
+  if(sameSlot.some(a => a.status === 'blocked' && blockAppliesTo(a, category))) return true;
 
   if(category === 'masculino'){
     return sameSlot.some(a => a.category === 'masculino');
@@ -1900,7 +1934,8 @@ function buildSlotsHtml(){
   const takenNow = allSlots.filter(s => isSlotTakenFor(state.date, s, state.category, state.services, state.rescheduleApptId));
   const availableCount = allSlots.length - takenNow.length;
   if(availableCount === 0){
-    const allBlocked = dayEntries.length > 0 && dayEntries.every(a => a.status === 'blocked');
+    const relevantEntries = dayEntries.filter(a => a.status === 'blocked' ? blockAppliesTo(a, state.category) : a.category === state.category);
+    const allBlocked = relevantEntries.length > 0 && relevantEntries.every(a => a.status === 'blocked');
     if(allBlocked){
       return `<div class="empty-note">${SALON_NAME} não vai atender nesse dia. Escolha outra data.</div>`;
     }
@@ -2513,7 +2548,7 @@ function renderWeekStrip(){
 
 function buildOwnerBlockSlotsHtml(){
   const allSlots = !isClosedDate(state.ownerDate) ? generateAllSlots() : [];
-  const taken = takenTimesForDate(state.ownerDate);
+  const taken = takenTimesForScope(state.ownerDate, state.blockScope);
   if(isClosedDate(state.ownerDate)){
     return CLOSED_DAY_NOTICE_HTML;
   }
@@ -2630,6 +2665,13 @@ function renderOwner(){
   renderOwnerCalendar();
   renderSharedSlotPanel();
 
+  const scopeRow = document.getElementById('blockScopeRow');
+  if(scopeRow){
+    scopeRow.innerHTML = [['masculino','💈 Barbearia'],['feminino','✂️ Feminino'],['ambos','Ambos']].map(([k,l]) =>
+      `<div class="cat-chip ${state.blockScope===k?'active':''}" data-action="block-scope" data-scope="${k}" style="flex:1 1 auto; text-align:center;">${l}</div>`
+    ).join('');
+  }
+
   const blockPanel = document.getElementById('ownerBlockPanel');
   if(state.ownerBlockMode){
     const n = state.selectedBlockTimes.length;
@@ -2661,7 +2703,7 @@ function renderOwner(){
       <div class="appt-card is-blocked">
         <div class="appt-top">
           <span class="appt-time">${a.time}</span>
-          <span class="status-badge blocked">Bloqueado</span>
+          <span class="status-badge blocked">Bloqueado · ${blockScopeLabel(a.category)}</span>
         </div>
         <div class="appt-service" style="margin-bottom:10px;">${escapeHtml(a.service || 'Horário indisponível')}</div>
         <div class="appt-actions">
@@ -3305,16 +3347,19 @@ document.addEventListener('click', async (e)=>{
     }
     render();
   }
+  else if(action === 'block-scope'){
+    state.blockScope = t.dataset.scope;
+    state.selectedBlockTimes = [];
+    render();
+  }
   else if(action === 'confirm-block-selected'){
     const times = state.selectedBlockTimes.slice();
     if(times.length === 0) return;
+    const scope = state.blockScope;
     const reason = prompt(
-      `Motivo do bloqueio para ${times.length} horário${times.length===1?'':'s'} (opcional, ex: Almoço, Compromisso):`, ''
+      `Motivo do bloqueio (${blockScopeLabel(scope === 'ambos' ? null : scope)}) para ${times.length} horário${times.length===1?'':'s'} (opcional, ex: Almoço, Compromisso):`, ''
     ) || 'Bloqueado';
-    const latest = state.appointmentsCache.slice();
-    const stillTaken = latest
-      .filter(a => a.date === state.ownerDate && a.status !== 'cancelled')
-      .map(a => a.time);
+    const stillTaken = takenTimesForScope(state.ownerDate, scope);
     const toBlock = times.filter(t2 => !stillTaken.includes(t2));
     const skipped = times.length - toBlock.length;
     if(toBlock.length > 0){
@@ -3322,6 +3367,7 @@ document.addEventListener('click', async (e)=>{
         date: state.ownerDate,
         time: time,
         status: 'blocked',
+        category: scope === 'ambos' ? null : scope,
         service: reason,
         name: null,
         phone: null
@@ -3339,11 +3385,9 @@ document.addEventListener('click', async (e)=>{
       alert('Esse dia já está fechado (domingo).');
       return;
     }
-    if(!confirm(`Bloquear todos os horários livres de ${formatDatePretty(state.ownerDate)}?`)) return;
-    const latest = state.appointmentsCache.slice();
-    const taken = latest
-      .filter(a => a.date === state.ownerDate && a.status !== 'cancelled')
-      .map(a => a.time);
+    const scope = state.blockScope;
+    if(!confirm(`Bloquear todos os horários livres de ${formatDatePretty(state.ownerDate)} para: ${blockScopeLabel(scope === 'ambos' ? null : scope)}?`)) return;
+    const taken = takenTimesForScope(state.ownerDate, scope);
     const allSlots = generateAllSlots();
     const toBlock = allSlots.filter(s => !taken.includes(s));
     if(toBlock.length > 0){
@@ -3351,6 +3395,7 @@ document.addEventListener('click', async (e)=>{
         date: state.ownerDate,
         time: s,
         status: 'blocked',
+        category: scope === 'ambos' ? null : scope,
         service: 'Fechado',
         name: null,
         phone: null
@@ -3359,14 +3404,14 @@ document.addEventListener('click', async (e)=>{
     render();
   }
   else if(action === 'unblock-whole-day'){
-    const latest = state.appointmentsCache.slice();
-    const dayBlocks = latest.filter(a => a.date === state.ownerDate && a.status === 'blocked');
+    const scope = state.blockScope;
+    const dayBlocks = state.appointmentsCache.filter(a => a.date === state.ownerDate && a.status === 'blocked' && blockMatchesScope(a, scope));
     if(dayBlocks.length === 0){
-      alert('Não há horários bloqueados nesse dia.');
+      alert('Não há horários bloqueados nesse dia para essa opção.');
       return;
     }
-    if(!confirm(`Desbloquear todos os ${dayBlocks.length} horário(s) bloqueados de ${formatDatePretty(state.ownerDate)}?`)) return;
-    await deleteBlockedForDate(state.ownerDate);
+    if(!confirm(`Desbloquear ${dayBlocks.length} horário(s) bloqueado(s) de ${formatDatePretty(state.ownerDate)} (${blockScopeLabel(scope === 'ambos' ? null : scope)})?`)) return;
+    await deleteBlockedForDate(state.ownerDate, scope);
     render();
   }
   else if(action === 'unblock-slot'){
