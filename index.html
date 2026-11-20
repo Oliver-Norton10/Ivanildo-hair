@@ -735,24 +735,6 @@
   .receipt-row .k{ color:var(--muted); }
   .receipt-row .v{ font-weight:600; color:var(--ink); text-align:right; }
 
-  /* floating whatsapp */
-  .fab-whatsapp{
-    position:fixed;
-    bottom:22px;
-    left:50%;
-    transform:translateX(calc(-50% + 208px));
-    width:54px; height:54px;
-    border-radius:50%;
-    background:var(--whatsapp);
-    display:flex; align-items:center; justify-content:center;
-    box-shadow:0 6px 20px rgba(0,0,0,0.5);
-    text-decoration:none;
-    z-index:50;
-  }
-  @media (max-width:480px){
-    .fab-whatsapp{ transform:none; right:20px; left:auto; bottom:20px; }
-  }
-
   /* owner view */
   .owner-date{
     display:flex; align-items:center; gap:10px; margin-bottom:12px;
@@ -1365,9 +1347,18 @@
     </div>
   </div>
 
-  <a class="fab-whatsapp" id="fabWhatsapp" target="_blank" rel="noopener" title="Falar no WhatsApp">
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="#0b1c10"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.15-.174.199-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12.05 2C6.579 2 2.148 6.43 2.148 11.9c0 1.85.51 3.583 1.397 5.07L2 22l5.19-1.52a9.86 9.86 0 0 0 4.86 1.267h.004c5.47 0 9.9-4.43 9.9-9.898C21.955 6.43 17.52 2 12.05 2zm0 17.905h-.003a8.24 8.24 0 0 1-4.19-1.148l-.3-.178-3.107.91.917-3.07-.196-.315a8.216 8.216 0 0 1-1.264-4.394c0-4.554 3.706-8.26 8.267-8.26 4.554 0 8.257 3.706 8.257 8.26 0 4.556-3.703 8.195-8.38 8.195z"/></svg>
-  </a>
+  <div id="contactOverlay" class="modal-overlay" style="display:none" data-backdrop="contact">
+    <div class="modal-card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+        <div>
+          <h3 class="modal-title">Fale com a nossa equipe</h3>
+          <p class="modal-sub">Escolha com quem você quer falar no WhatsApp.</p>
+        </div>
+        <button class="owner-exit-btn" data-action="close-contact">Fechar</button>
+      </div>
+      <div id="contactList"></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1378,11 +1369,12 @@
    ========================================================= */
 // Número do Ivanildo (contato da área MASCULINA), formato: código do país + DDD + número (somente dígitos)
 const SALON_WHATSAPP = '5516981640118';
-// Profissionais da área FEMININA. O cliente vê um botão de WhatsApp para cada uma.
+// Contatos da área FEMININA: o cliente toca em "Entre em contato com a nossa equipe" e escolhe com quem falar.
 // Formato do número: código do país + DDD + número (somente dígitos).
 const FEMININO_CONTACTS = [
   { name: 'May',  number: '5516997046031' },
-  { name: 'Rose', number: '5516999644705' }
+  { name: 'Rose', number: '5516999644705' },
+  { name: 'Ivanildo', number: SALON_WHATSAPP }
 ];
 const SALON_NAME = 'Ivanildo';
 const OPEN_TIME = '08:00';
@@ -2010,11 +2002,26 @@ function getContacts(category){
 function buildWaLink(message, number){
   return `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
 }
-// Gera um botão de WhatsApp por contato. makeLabel(nome) e makeMsg(nome) montam o texto.
+// Mensagem usada pelo seletor de contatos da área feminina (atualizada a cada render).
+let contactMsgFn = n => `Olá ${n}, gostaria de informações sobre agendamento.`;
+// Masculino: um botão direto pro Ivanildo. Feminino: um único botão "Entre em contato
+// com a nossa equipe" que abre a lista com as profissionais e o Ivanildo.
 function waButtonsHtml(category, makeLabel, makeMsg){
-  return getContacts(category).map(c =>
-    `<a class="btn-whatsapp" href="${buildWaLink(makeMsg(c.name), c.number)}" target="_blank" rel="noopener">${waIconSvg()} ${makeLabel(c.name)}</a>`
+  if(category === 'feminino' && FEMININO_CONTACTS.length){
+    contactMsgFn = makeMsg;
+    return `<button type="button" class="btn-whatsapp" data-action="open-contact">${waIconSvg()} Entre em contato com a nossa equipe</button>`;
+  }
+  const c = getContacts(category)[0];
+  return `<a class="btn-whatsapp" href="${buildWaLink(makeMsg(c.name), c.number)}" target="_blank" rel="noopener">${waIconSvg()} ${makeLabel(c.name)}</a>`;
+}
+function openContactModal(){
+  document.getElementById('contactList').innerHTML = FEMININO_CONTACTS.map(c =>
+    `<a class="btn-whatsapp" href="${buildWaLink(contactMsgFn(c.name), c.number)}" target="_blank" rel="noopener">${waIconSvg()} ${escapeHtml(c.name)}</a>`
   ).join('');
+  document.getElementById('contactOverlay').style.display = 'flex';
+}
+function closeContactModal(){
+  document.getElementById('contactOverlay').style.display = 'none';
 }
 function escapeHtml(s){
   return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -2927,11 +2934,14 @@ function resetClientForm(){
    EVENTS
    ========================================================= */
 document.addEventListener('click', async (e)=>{
+  if(e.target.dataset && e.target.dataset.backdrop === 'contact'){ closeContactModal(); return; }
   const t = e.target.closest('[data-action]');
   if(!t) return;
   const action = t.dataset.action;
 
-  if(action === 'open-owner-gate'){
+  if(action === 'open-contact'){ openContactModal(); }
+  else if(action === 'close-contact'){ closeContactModal(); }
+  else if(action === 'open-owner-gate'){
     state.ownerGateOpen = true;
     state.ownerGateError = false;
     render();
@@ -3437,7 +3447,6 @@ async function init(){
 
   if(OWNER_LINK_MODE){
     document.body.classList.add('owner-dedicated');
-    document.getElementById('fabWhatsapp').style.display = 'none';
     document.querySelector('.tagline').textContent = 'Painel do Proprietário';
     document.querySelector('footer.notice').innerHTML = 'Painel exclusivo de Ivanildo · não compartilhe este link.';
     const exitBtn = document.querySelector('[data-action="exit-owner"]');
