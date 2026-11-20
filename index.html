@@ -427,6 +427,30 @@
     color:var(--blue-dim);
     border:1px solid var(--blue);
   }
+  .status-badge.inprogress{
+    background:rgba(224,150,30,0.16);
+    color:#8A5200;
+    border:1px solid #D9962A;
+  }
+  .btn-arrived-appt{
+    width:100%;
+    padding:11px;
+    border:none;
+    border-radius:10px;
+    background:#C27A12;
+    color:#ffffff;
+    font-size:13px;
+    font-weight:700;
+    cursor:pointer;
+    margin-bottom:8px;
+  }
+  .btn-arrived-appt.secondary{ background:transparent; color:#8A5200; border:1.5px solid #D9962A; }
+  .status-strip{ display:flex; gap:6px; flex-wrap:wrap; margin:0 0 10px; }
+  .status-strip .ss{ font-size:12px; font-weight:700; padding:5px 11px; border-radius:999px; border:1px solid var(--line); background:var(--bg-elev); color:var(--ink); }
+  .status-strip .ss b{ margin-left:4px; }
+  .status-strip .ss.wait{ color:var(--teal-dim); border-color:var(--teal-dim); }
+  .status-strip .ss.go{ color:#8A5200; border-color:#D9962A; background:rgba(224,150,30,0.12); }
+  .status-strip .ss.done{ color:var(--blue-dim); border-color:var(--blue); }
   .btn-confirm-appt{
     width:100%;
     padding:11px;
@@ -1139,6 +1163,10 @@
   .appt-mini{ display:flex; align-items:center; gap:10px; }
   .appt-mini .appt-time{ font-size:14px; flex:0 0 auto; }
   .appt-mini-name{ flex:1; min-width:0; font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .appt-mini .status-badge{ flex:0 0 auto; padding:3px 8px; }
+  .sort-group{ display:inline-flex; gap:4px; margin-right:auto; }
+  .sort-btn{ font-size:12px; font-weight:600; padding:6px 11px; border-radius:999px; cursor:pointer; border:1px solid var(--line); background:var(--bg-elev); color:var(--muted); }
+  .sort-btn.active{ background:var(--teal); border-color:var(--teal); color:#fff; }
   .st-dot{ width:9px; height:9px; border-radius:50%; flex:0 0 auto; background:#c9a24a; }
   .st-dot.confirmed{ background:#1F7A4C; }
   .st-dot.completed{ background:#8b96a0; }
@@ -1187,6 +1215,15 @@
   .dash-col .lb{ font-size:10.5px; color:var(--muted); margin-top:4px; }
   .dash-two{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
   @media (max-width:560px){ .dash-kpis{ grid-template-columns:1fr 1fr; } .dash-two{ grid-template-columns:1fr; } }
+
+  /* remarcar (lado do Ivanildo) */
+  .resched-info{ background:var(--bg-elev); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:14px; }
+  .resched-info .ri-name{ font-size:15px; font-weight:700; }
+  .resched-info .ri-line{ font-size:12.5px; color:var(--muted); margin-top:2px; }
+  .resched-info .ri-now{ font-size:12.5px; margin-top:8px; color:var(--teal-dim); font-weight:600; }
+  .resched-ok{ text-align:center; padding:6px 0 2px; }
+  .resched-ok .big{ font-size:34px; }
+  .resched-ok p{ font-size:14px; margin:8px 0 14px; }
 </style>
 </head>
 <body>
@@ -1430,6 +1467,14 @@
     </div>
   </div>
 
+  <!-- OWNER RESCHEDULE MODAL -->
+  <div id="ownerReschedOverlay" class="modal-overlay" style="display:none">
+    <div class="modal-card manual-modal-card">
+      <h3 class="modal-title" id="ownerReschedTitle">Remarcar agendamento</h3>
+      <div id="ownerReschedBody"></div>
+    </div>
+  </div>
+
   <!-- OWNER PIN GATE MODAL -->
   <div id="ownerGateOverlay" class="modal-overlay" style="display:none">
     <div class="modal-card">
@@ -1569,6 +1614,7 @@ let state = {
   clientListSearch: '',
   monthSummaryOpen: false,
   dayTotalOpen: false,
+  ownerResched: null, // { id, date, time, error, done, oldDate, oldTime }
   dashboardOpen: false,
   dashPeriod: 'week7',
   collapsedCards: loadCollapsedCards(),
@@ -1578,6 +1624,7 @@ let state = {
   ownerBlockMode: false,
   blockScope: 'masculino', // pra quem o bloqueio vale: masculino | feminino | ambos
   ownerTab: 'masculino',
+  ownerSort: 'time', // time = por horário · created = por ordem de chegada do agendamento
   selectedBlockTimes: [],
   ownerGateOpen: false,
   ownerGateError: false,
@@ -1925,7 +1972,7 @@ function setRememberedName(name){
 }
 
 function isActiveStatus(status){
-  return status === 'pending' || status === 'confirmed';
+  return status === 'pending' || status === 'confirmed' || status === 'in_progress';
 }
 
 async function runHistorySearch(phoneRaw){
@@ -2176,7 +2223,7 @@ function renderSuccess(){
     : `Olá ${n}, acabei de agendar um horário para ${formatDatePretty(d.date)} às ${d.time}.`;
 
   const myAppt = state.appointmentsCache.find(a => a.id === state.myApptId);
-  const isConfirmed = myAppt && myAppt.status === 'confirmed';
+  const isConfirmed = myAppt && (myAppt.status === 'confirmed' || myAppt.status === 'in_progress');
 
   const statusBlock = isConfirmed
     ? `<div class="status-badge confirmed" style="font-size:12px; padding:8px 16px; margin-bottom:18px;">
@@ -2381,7 +2428,7 @@ function renderDayTotal(){
   const masc = active.filter(a => a.category === 'masculino');
   const fem = active.filter(a => a.category !== 'masculino');
   const cnt = (list, st) => list.filter(a => a.status === st).length;
-  const stLine = list => `${cnt(list,'pending')} pendente${cnt(list,'pending')===1?'':'s'} · ${cnt(list,'confirmed')} confirmado${cnt(list,'confirmed')===1?'':'s'} · ${cnt(list,'completed')} finalizado${cnt(list,'completed')===1?'':'s'}`;
+  const stLine = list => `${cnt(list,'pending')} pendente${cnt(list,'pending')===1?'':'s'} · ${cnt(list,'confirmed')} confirmado${cnt(list,'confirmed')===1?'':'s'} · ${cnt(list,'in_progress')} em andamento · ${cnt(list,'completed')} finalizado${cnt(list,'completed')===1?'':'s'}`;
 
   document.getElementById('dayTotalSub').textContent =
     (day === todayISO() ? 'Hoje · ' : '') + formatDatePretty(day);
@@ -2530,6 +2577,74 @@ function renderDashboard(){
   `;
 }
 
+/* =========================================================
+   REMARCAR (lado do Ivanildo)
+   ========================================================= */
+function buildReschedSlotsHtml(){
+  const r = state.ownerResched;
+  const appt = state.appointmentsCache.find(a => a.id === r.id);
+  if(!appt) return '';
+  if(!r.date) return `<div class="empty-note">Escolha uma data.</div>`;
+  if(isClosedDate(r.date)) return CLOSED_DAY_NOTICE_HTML;
+  const allSlots = generateAllSlots();
+  const takenList = allSlots.map(s => isSlotTakenFor(r.date, s, appt.category, appt.services, appt.id));
+  if(takenList.every(t => t)) return `<div class="empty-note">Sem horários livres nesta data.</div>`;
+  return '<div class="slots-grid">' + allSlots.map((s,i) => {
+    const taken = takenList[i];
+    const sel = r.time === s;
+    const isCurrent = (r.date === appt.date && s === appt.time);
+    return `<div class="slot ${taken?'taken':''} ${sel?'selected':''}" ${taken?'':'data-action="resched-pick-time" data-time="'+s+'"'}>${s}${isCurrent ? '<small style="display:block;font-size:9px;opacity:.7;">atual</small>' : ''}</div>`;
+  }).join('') + '</div>';
+}
+
+function renderOwnerReschedule(){
+  const overlay = document.getElementById('ownerReschedOverlay');
+  const r = state.ownerResched;
+  overlay.style.display = r ? 'flex' : 'none';
+  if(!r) return;
+  const appt = state.appointmentsCache.find(a => a.id === r.id);
+  const body = document.getElementById('ownerReschedBody');
+  if(!appt){
+    body.innerHTML = `<p class="modal-sub">Esse agendamento não existe mais.</p><button class="btn-secondary" data-action="close-resched">Fechar</button>`;
+    return;
+  }
+
+  if(r.done){
+    const hasPhone = !!(appt.phone && appt.phone.trim());
+    const first = (appt.name || '').trim().split(/\s+/)[0];
+    const msg = `Olá${first ? ' ' + first : ''}, tudo bem? Precisei remarcar o seu horário no Ivanildo Hair Center: de ${formatDatePretty(r.oldDate)} às ${r.oldTime} para ${formatDatePretty(appt.date)} às ${appt.time}. Fica bom para você?`;
+    document.getElementById('ownerReschedTitle').textContent = 'Agendamento remarcado';
+    body.innerHTML = `
+      <div class="resched-ok">
+        <div class="big">✅</div>
+        <p><b>${escapeHtml(appt.name || 'Cliente')}</b><br>agora em <b>${formatDatePretty(appt.date)}</b> às <b>${appt.time}</b></p>
+        ${hasPhone ? `<a class="btn-whatsapp" href="https://wa.me/${normalizePhoneForWa(appt.phone)}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">${waIconSvg()} Avisar o cliente no WhatsApp</a>` : `<p class="modal-sub">Cliente sem telefone cadastrado, então não dá para avisar por aqui.</p>`}
+        <button class="btn-secondary" data-action="close-resched" style="margin-top:8px;">Fechar</button>
+      </div>`;
+    return;
+  }
+
+  document.getElementById('ownerReschedTitle').textContent = 'Remarcar agendamento';
+  const catLabel = appt.category === 'masculino' ? '💈 Barbearia' : '✂️ Feminino';
+  body.innerHTML = `
+    ${r.error ? `<div class="err-msg">${r.error}</div>` : ''}
+    <div class="resched-info">
+      <div class="ri-name">${appt.name && appt.name.trim() ? escapeHtml(appt.name) : 'Cliente sem nome informado'}</div>
+      <div class="ri-line">${appt.phone && appt.phone.trim() ? escapeHtml(appt.phone) : 'Telefone não informado'} · ${catLabel}</div>
+      <div class="ri-line">${escapeHtml(appt.service || '')}</div>
+      <div class="ri-now">Marcado para: ${formatDatePretty(appt.date)} às ${appt.time}</div>
+    </div>
+    <div class="field">
+      <label class="field-label">Nova data</label>
+      <input type="date" id="reschedDateInput" min="${todayISO()}" max="${maxDateISO()}" value="${r.date}" data-action="input-resched-date">
+    </div>
+    <label class="field-label">Novo horário</label>
+    <div id="reschedSlotsContainer">${buildReschedSlotsHtml()}</div>
+    <button class="btn-primary" data-action="submit-resched" style="margin-top:16px;" ${r.saving?'disabled':''}>${r.saving ? 'Salvando...' : 'Salvar novo horário'}</button>
+    <button class="btn-secondary" data-action="close-resched">Cancelar</button>
+  `;
+}
+
 function renderMonthSummary(){
   const overlay = document.getElementById('monthSummaryOverlay');
   overlay.style.display = state.monthSummaryOpen ? 'flex' : 'none';
@@ -2632,6 +2747,7 @@ function renderSharedSlotPanel(){
 function statusLabel(a){
   if(a.status === 'cancelled') return { cls:'cancelled', text:'Cancelado' };
   if(a.status === 'confirmed') return { cls:'confirmed', text:'Confirmado' };
+  if(a.status === 'in_progress') return { cls:'inprogress', text:'Em andamento' };
   if(a.status === 'completed') return { cls:'completed', text:'Finalizado' };
   return { cls:'pending', text:'Pendente' };
 }
@@ -2661,7 +2777,7 @@ function renderHistory(){
 
   resultsEl.innerHTML = state.historyResults.map(a => {
     const st = statusLabel(a);
-    const canCancel = a.status !== 'cancelled' && a.status !== 'completed';
+    const canCancel = a.status !== 'cancelled' && a.status !== 'completed' && a.status !== 'in_progress';
     return `
     <div class="history-card ${a.status === 'cancelled' ? 'cancelled' : ''}">
       <div class="history-top">
@@ -2770,7 +2886,7 @@ function renderOwnerCalendar(){
   // dias com algo ainda pendente de finalizar (vermelho — pede atenção)
   const datesActive = new Set(
     state.appointmentsCache
-      .filter(a => a.status === 'pending' || a.status === 'confirmed')
+      .filter(a => a.status === 'pending' || a.status === 'confirmed' || a.status === 'in_progress')
       .map(a => a.date)
   );
   // dias onde tudo que tinha já foi finalizado (teal — tranquilo)
@@ -2814,7 +2930,7 @@ function renderWeekStrip(){
     const dt = new Date(y, m-1, d);
     if(isClosedDate(iso)) continue; // pula dia fechado (domingo, e segunda fora de dezembro) — não conta como um dos 7
     const count = state.appointmentsCache.filter(a =>
-      a.date === iso && (a.status === 'pending' || a.status === 'confirmed')
+      a.date === iso && (a.status === 'pending' || a.status === 'confirmed' || a.status === 'in_progress')
     ).length;
     const active = iso === state.ownerDate;
     const isToday = iso === today;
@@ -2894,7 +3010,8 @@ function renderOwnerHistory(){
       <div class="history-service">${escapeHtml(a.service)}</div>
       ${a.chemicalType ? `<div style="font-size:12px; color:var(--blue-dim); margin-bottom:6px;">🧪 Química usada: ${escapeHtml(a.chemicalType)}</div>` : ''}
       <span class="status-badge ${st.cls}">${st.text}</span>
-      ${a.status === 'confirmed' ? `<button class="btn-finalize-appt" style="margin-top:10px;" data-action="finalize-appt" data-id="${a.id}">Finalizar atendimento</button>` : ''}
+      ${a.status === 'confirmed' ? `<button class="btn-arrived-appt" style="margin-top:10px;" data-action="arrived-appt" data-id="${a.id}">🙋 Cliente chegou</button>` : ''}
+      ${a.status === 'in_progress' ? `<button class="btn-finalize-appt" style="margin-top:10px;" data-action="finalize-appt" data-id="${a.id}">Finalizar atendimento</button>` : ''}
     </div>`;
   }).join('');
 }
@@ -2997,6 +3114,7 @@ function renderOwner(){
     const badgeMap = {
       pending: {cls:'pending', text:'Pendente'},
       confirmed: {cls:'confirmed', text:'Confirmado'},
+      in_progress: {cls:'inprogress', text:'Em andamento'},
       completed: {cls:'completed', text:'Finalizado'}
     };
     const badge = badgeMap[a.status] || badgeMap.pending;
@@ -3010,7 +3128,7 @@ function renderOwner(){
       <div class="appt-mini">
         <span class="appt-time">${a.time}</span>
         <span class="appt-mini-name">${a.name && a.name.trim() ? escapeHtml(a.name) : 'Cliente sem nome informado'}</span>
-        <span class="st-dot ${badge.cls}" title="${badge.text}"></span>
+        <span class="status-badge ${badge.cls}">${badge.text}</span>
         <button class="appt-toggle" data-action="toggle-card" data-id="${a.id}" title="Abrir card" aria-label="Abrir card">▾</button>
       </div>
     </div>`;
@@ -3031,11 +3149,14 @@ function renderOwner(){
       ${priorVisits > 0 ? `<div class="source-badge" style="color:var(--teal-dim);">🔁 Já veio antes (${priorVisits}x)</div>` : ''}
       ${a.chemicalType ? `<div class="source-badge" style="color:var(--blue-dim);">🧪 Química usada: ${escapeHtml(a.chemicalType)}</div>` : ''}
       ${a.status === 'pending' ? `<button class="btn-confirm-appt" data-action="confirm-appt" data-id="${a.id}">Confirmar agendamento</button>` : ''}
-      ${a.status === 'confirmed' ? `<button class="btn-finalize-appt" data-action="finalize-appt" data-id="${a.id}">Finalizar atendimento</button>` : ''}
+      ${a.status === 'pending' ? `<button class="btn-arrived-appt secondary" data-action="arrived-appt" data-id="${a.id}">🙋 Cliente chegou</button>` : ''}
+      ${a.status === 'confirmed' ? `<button class="btn-arrived-appt" data-action="arrived-appt" data-id="${a.id}">🙋 Cliente chegou</button>` : ''}
+      ${a.status === 'in_progress' ? `<button class="btn-finalize-appt" data-action="finalize-appt" data-id="${a.id}">Finalizar atendimento</button>` : ''}
       <div class="appt-actions">
         ${hasPhone ? `<a class="call" href="tel:${digitsOnly(a.phone)}">Ligar</a>` : ''}
         ${hasPhone ? `<a href="https://wa.me/${waNum}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
-        ${a.status !== 'completed' ? `<button class="cancel" data-action="cancel-appt" data-id="${a.id}">Cancelar</button>` : ''}
+        ${(a.status !== 'completed' && a.status !== 'in_progress') ? `<button data-action="owner-reschedule" data-id="${a.id}">Remarcar</button>` : ''}
+        ${(a.status !== 'completed' && a.status !== 'in_progress') ? `<button class="cancel" data-action="cancel-appt" data-id="${a.id}">Cancelar</button>` : ''}
       </div>
       ${hasPhone ? `<button class="btn-secondary" style="margin-top:8px;" data-action="view-client-history" data-phone="${escapeHtml(a.phone)}" data-name="${escapeHtml(a.name || '')}">📋 Ver histórico deste cliente</button>` : ''}
     </div>`;
@@ -3055,7 +3176,11 @@ function renderOwner(){
       <span>${label}</span><span class="tab-count">${n}</span>
     </button>`;
 
-  const lists = { masculino: masc, feminino: fem, blocks: blocks };
+  const toMin = t => { const [h,m] = String(t||'0:0').split(':').map(Number); return h*60 + (m||0); };
+  const byTime = (a,b) => (toMin(a.time) - toMin(b.time)) || (a.createdAt||'').localeCompare(b.createdAt||'');
+  const byArrival = (a,b) => (a.createdAt||'').localeCompare(b.createdAt||'') || (toMin(a.time) - toMin(b.time));
+  const sortApptList = l => l.slice().sort(state.ownerSort === 'created' ? byArrival : byTime);
+  const lists = { masculino: sortApptList(masc), feminino: sortApptList(fem), blocks: blocks.slice().sort(byTime) };
   const emptyText = {
     masculino: 'Nenhum agendamento masculino neste dia.',
     feminino: 'Nenhum agendamento feminino neste dia.',
@@ -3069,7 +3194,12 @@ function renderOwner(){
       ${tabBtn('feminino', '✂️ Feminino', 'is-fem', fem.length)}
       ${blocks.length ? tabBtn('blocks', '🔒 Bloqueados', 'is-blocks', blocks.length) : ''}
     </div>
-    ${(tab !== 'blocks' && cur.length > 1) ? `<div class="collapse-all-row"><button class="collapse-all-btn" data-action="toggle-all-cards">${cur.every(a => state.collapsedCards[String(a.id)]) ? '▾ Expandir todos' : '▴ Recolher todos'}</button></div>` : ''}
+    ${(tab !== 'blocks' && cur.length > 0) ? `<div class="status-strip">
+      <span class="ss wait">⏳ A chegar<b>${cur.filter(a => a.status === 'pending' || a.status === 'confirmed').length}</b></span>
+      <span class="ss go">▶ Em andamento<b>${cur.filter(a => a.status === 'in_progress').length}</b></span>
+      <span class="ss done">✔ Finalizados<b>${cur.filter(a => a.status === 'completed').length}</b></span>
+    </div>` : ''}
+    ${(tab !== 'blocks' && cur.length > 1) ? `<div class="collapse-all-row"><span class="sort-group"><button class="sort-btn ${state.ownerSort==='time'?'active':''}" data-action="owner-sort" data-sort="time">🕒 Por horário</button><button class="sort-btn ${state.ownerSort==='created'?'active':''}" data-action="owner-sort" data-sort="created">📥 Por chegada</button></span><button class="collapse-all-btn" data-action="toggle-all-cards">${cur.every(a => state.collapsedCards[String(a.id)]) ? '▾ Expandir todos' : '▴ Recolher todos'}</button></div>` : ''}
     ${cur.length
       ? `<div class="owner-section-grid">${cur.map(buildCard).join('')}</div>`
       : `<div class="owner-section-empty">${emptyText[tab]}</div>`}`;
@@ -3132,6 +3262,7 @@ function render(){
   renderMonthSummary();
   renderDayTotal();
   renderDashboard();
+  renderOwnerReschedule();
 
   if(state.view === 'client'){
     if(state.successData){
@@ -3357,6 +3488,52 @@ document.addEventListener('click', async (e)=>{
     state.monthSummaryOpen = true;
     render();
   }
+  else if(action === 'owner-reschedule'){
+    const appt = state.appointmentsCache.find(a => String(a.id) === String(t.dataset.id));
+    if(!appt) return;
+    state.ownerResched = { id: appt.id, date: appt.date, time: null, error: '', done: false, saving: false, oldDate: appt.date, oldTime: appt.time };
+    render();
+  }
+  else if(action === 'close-resched'){
+    state.ownerResched = null;
+    render();
+  }
+  else if(action === 'resched-pick-time'){
+    if(!state.ownerResched) return;
+    state.ownerResched.time = t.dataset.time;
+    state.ownerResched.error = '';
+    renderOwnerReschedule();
+  }
+  else if(action === 'submit-resched'){
+    const r = state.ownerResched;
+    if(!r || r.saving) return;
+    if(!r.date){ r.error = 'Escolha a nova data.'; renderOwnerReschedule(); return; }
+    if(isClosedDate(r.date)){ r.error = 'Fechado neste dia, escolha outra data.'; renderOwnerReschedule(); return; }
+    if(!r.time){ r.error = 'Escolha o novo horário.'; renderOwnerReschedule(); return; }
+    const cur = state.appointmentsCache.find(a => a.id === r.id);
+    if(!cur){ r.error = 'Esse agendamento não existe mais.'; renderOwnerReschedule(); return; }
+    if(r.date === cur.date && r.time === cur.time){ r.error = 'Escolha uma data ou horário diferente do atual.'; renderOwnerReschedule(); return; }
+    r.saving = true; renderOwnerReschedule();
+    // confere com os dados mais novos do banco antes de gravar
+    const fresh = await loadAppointmentsFresh();
+    if(fresh !== null) state.appointmentsCache = fresh;
+    if(isSlotTakenFor(r.date, r.time, cur.category, cur.services, cur.id)){
+      r.saving = false; r.time = null;
+      r.error = 'Esse horário acabou de ser ocupado. Escolha outro.';
+      renderOwnerReschedule();
+      return;
+    }
+    const ok = await updateAppointmentRow(cur.id, { date: r.date, time: r.time });
+    r.saving = false;
+    if(!ok){
+      r.error = 'Não consegui salvar. Tente de novo.';
+      renderOwnerReschedule();
+      return;
+    }
+    r.done = true;
+    state.ownerDate = r.date;
+    render();
+  }
   else if(action === 'open-day-total'){
     state.ownerMenuOpen = false;
     state.dayTotalOpen = true;
@@ -3383,6 +3560,10 @@ document.addEventListener('click', async (e)=>{
     const id = String(t.dataset.id);
     if(state.collapsedCards[id]) delete state.collapsedCards[id]; else state.collapsedCards[id] = true;
     saveCollapsedCards();
+    renderOwner();
+  }
+  else if(action === 'owner-sort'){
+    state.ownerSort = t.dataset.sort === 'created' ? 'created' : 'time';
     renderOwner();
   }
   else if(action === 'toggle-all-cards'){
@@ -3499,6 +3680,12 @@ document.addEventListener('click', async (e)=>{
   else if(action === 'confirm-appt'){
     const id = t.dataset.id;
     await updateAppointmentRow(id, { status: 'confirmed', confirmedAt: new Date().toISOString() });
+    render();
+  }
+  else if(action === 'arrived-appt'){
+    const id = t.dataset.id;
+    const appt = state.appointmentsCache.find(a => a.id === id);
+    await updateAppointmentRow(id, { status: 'in_progress', confirmedAt: (appt && appt.confirmedAt) || new Date().toISOString() });
     render();
   }
   else if(action === 'finalize-appt'){
@@ -3791,6 +3978,21 @@ document.addEventListener('input', (e)=>{
   else if(action === 'input-client-list-search'){
     state.clientListSearch = e.target.value;
     renderClientList();
+  }
+  else if(action === 'input-resched-date'){
+    const r = state.ownerResched;
+    if(!r) return;
+    const picked = e.target.value;
+    const container = document.getElementById('reschedSlotsContainer');
+    if(isClosedDate(picked)){
+      e.target.value = r.date || '';
+      if(container) container.innerHTML = CLOSED_DAY_NOTICE_HTML;
+      return;
+    }
+    r.date = picked;
+    r.time = null;
+    r.error = '';
+    if(container) container.innerHTML = buildReschedSlotsHtml();
   }
   else if(action === 'input-manual-date'){
     const picked = e.target.value;
