@@ -1421,11 +1421,10 @@ const SERVICES = {
   feminino: {
     label: 'Cabelo (Feminino)',
     items: [
-      'Corte','Escova','Luzes / Mechas','Permanente Afro (amônia)','Pintura',
-      'Alisamento (avaliação prévia)',
-      'Tratamento para cabelos crespos (avaliação prévia)',
-      'Selante (avaliação prévia)',
-      'Permanente (avaliação prévia)'
+      'Corte','Escova','Luzes / Mechas (avaliação prévia)','Permanente Afro (avaliação prévia)','Pintura',
+      'Alisamento (duas químicas) (avaliação prévia)',
+      'Selante/progressiva (avaliação prévia)',
+      'Permanente comum/suporte (avaliação prévia)'
     ]
   },
   masculino: {
@@ -2083,13 +2082,14 @@ function renderSuccess(){
 const CHEMICAL_OPTIONS = ['Sem formol', 'Alcalina', 'Guanidina'];
 
 // serviços marcados "(avaliação prévia)" são os que exigem escolher a
-// química usada na hora de finalizar (Alisamento, Tratamento para
-// cabelos crespos, Selante, Permanente)
+// química usada na hora de finalizar (Alisamento, Selante/progressiva,
+// Permanente comum). Luzes/Mechas e Permanente Afro têm avaliação prévia,
+// mas não perguntam a química.
 function apptNeedsChemical(appt){
   const list = Array.isArray(appt.services) && appt.services.length
     ? appt.services
     : (appt.service ? appt.service.split(',').map(s => s.trim()) : []);
-  return list.some(s => s.includes('avaliação prévia'));
+  return list.some(s => s.includes('avaliação prévia') && !/^(Luzes|Permanente Afro)/.test(s));
 }
 
 function renderOwnerMenu(){
