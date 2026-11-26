@@ -1224,6 +1224,15 @@
   .resched-ok{ text-align:center; padding:6px 0 2px; }
   .resched-ok .big{ font-size:34px; }
   .resched-ok p{ font-size:14px; margin:8px 0 14px; }
+
+  /* desfazer finalizados */
+  .undo-item{ display:flex; align-items:center; gap:10px; padding:10px 12px; margin-bottom:8px; border:1px solid var(--line); border-radius:12px; background:var(--bg-elev); }
+  .undo-item .u-when{ flex:0 0 auto; text-align:center; font-size:11px; color:var(--muted); line-height:1.35; min-width:46px; }
+  .undo-item .u-when b{ display:block; font-size:14px; color:var(--teal-dim); }
+  .undo-item .u-main{ flex:1; min-width:0; }
+  .undo-item .u-name{ font-size:14px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .undo-item .u-sub{ font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .undo-item button{ flex:0 0 auto; font-size:12px; font-weight:700; padding:8px 12px; border-radius:10px; border:1.5px solid #D9962A; background:transparent; color:#8A5200; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -1288,6 +1297,7 @@
               <button class="owner-menu-item" data-action="open-month-summary">📊 Resumo do mês</button>
               <button class="owner-menu-item" data-action="open-day-total">🧮 Total de clientes do dia</button>
               <button class="owner-menu-item" data-action="open-dashboard">📈 Dashboard</button>
+              <button class="owner-menu-item" data-action="open-undo-finalized">↩ Desfazer atendimentos finalizados</button>
             </div>
           </div>
           <button class="owner-exit-btn" data-action="exit-owner">Sair</button>
@@ -1467,6 +1477,21 @@
     </div>
   </div>
 
+  <!-- UNDO FINALIZED MODAL (owner side) -->
+  <div id="undoFinOverlay" class="modal-overlay" style="display:none">
+    <div class="modal-card dash-modal-card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+        <div>
+          <h3 class="modal-title">Desfazer finalizados</h3>
+          <p class="modal-sub" style="margin-bottom:0;">Finalizado por engano? Escolha o atendimento e ele volta para a agenda como <b>Confirmado</b>.</p>
+        </div>
+        <button class="owner-exit-btn" data-action="close-undo-finalized">Fechar</button>
+      </div>
+      <input type="text" id="undoFinSearch" placeholder="Buscar por nome, telefone ou serviço" data-action="input-undo-search" style="margin:12px 0 10px;">
+      <div id="undoFinList"></div>
+    </div>
+  </div>
+
   <!-- OWNER RESCHEDULE MODAL -->
   <div id="ownerReschedOverlay" class="modal-overlay" style="display:none">
     <div class="modal-card manual-modal-card">
@@ -1614,6 +1639,8 @@ let state = {
   clientListSearch: '',
   monthSummaryOpen: false,
   dayTotalOpen: false,
+  undoFinOpen: false,
+  undoFinQuery: '',
   ownerResched: null, // { id, date, time, error, done, oldDate, oldTime }
   dashboardOpen: false,
   dashPeriod: 'week7',
@@ -2645,6 +2672,45 @@ function renderOwnerReschedule(){
   `;
 }
 
+/* =========================================================
+   DESFAZER FINALIZADOS (lado do Ivanildo)
+   ========================================================= */
+function renderUndoList(){
+  const box = document.getElementById('undoFinList');
+  if(!box) return;
+  const q = (state.undoFinQuery || '').trim().toLowerCase();
+  const qDigits = digitsOnly(q);
+  let list = state.appointmentsCache.filter(a => a.status === 'completed');
+  if(q){
+    list = list.filter(a =>
+      (a.name || '').toLowerCase().includes(q) ||
+      (a.service || '').toLowerCase().includes(q) ||
+      (qDigits.length >= 3 && digitsOnly(a.phone).includes(qDigits)));
+  }
+  list.sort((a,b) => (b.date + b.time).localeCompare(a.date + a.time));
+  const total = list.length;
+  list = list.slice(0, 50);
+  if(!list.length){
+    box.innerHTML = `<div class="empty-note">${q ? 'Nenhum atendimento finalizado encontrado.' : 'Não há atendimentos finalizados.'}</div>`;
+    return;
+  }
+  box.innerHTML = list.map(a => `
+    <div class="undo-item">
+      <div class="u-when"><b>${a.time}</b>${a.date.slice(8)}/${a.date.slice(5,7)}</div>
+      <div class="u-main">
+        <div class="u-name">${a.name && a.name.trim() ? escapeHtml(a.name) : 'Cliente sem nome informado'}</div>
+        <div class="u-sub">${a.category === 'masculino' ? '💈' : '✂️'} ${escapeHtml(a.service || '')}</div>
+      </div>
+      <button data-action="undo-finalized" data-id="${a.id}">Desfazer</button>
+    </div>`).join('') + (total > 50 ? `<div class="empty-note" style="padding:6px 0;">Mostrando os 50 mais recentes. Use a busca para achar outro.</div>` : '');
+}
+function renderUndoFinalized(){
+  const overlay = document.getElementById('undoFinOverlay');
+  overlay.style.display = state.undoFinOpen ? 'flex' : 'none';
+  if(!state.undoFinOpen) return;
+  renderUndoList();
+}
+
 function renderMonthSummary(){
   const overlay = document.getElementById('monthSummaryOverlay');
   overlay.style.display = state.monthSummaryOpen ? 'flex' : 'none';
@@ -3152,6 +3218,7 @@ function renderOwner(){
       ${a.status === 'pending' ? `<button class="btn-arrived-appt secondary" data-action="arrived-appt" data-id="${a.id}">🙋 Cliente chegou</button>` : ''}
       ${a.status === 'confirmed' ? `<button class="btn-arrived-appt" data-action="arrived-appt" data-id="${a.id}">🙋 Cliente chegou</button>` : ''}
       ${a.status === 'in_progress' ? `<button class="btn-finalize-appt" data-action="finalize-appt" data-id="${a.id}">Finalizar atendimento</button>` : ''}
+      ${a.status === 'completed' ? `<button class="btn-arrived-appt secondary" data-action="reopen-appt" data-id="${a.id}">↩ Reabrir atendimento</button>` : ''}
       <div class="appt-actions">
         ${hasPhone ? `<a class="call" href="tel:${digitsOnly(a.phone)}">Ligar</a>` : ''}
         ${hasPhone ? `<a href="https://wa.me/${waNum}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
@@ -3263,6 +3330,7 @@ function render(){
   renderDayTotal();
   renderDashboard();
   renderOwnerReschedule();
+  renderUndoFinalized();
 
   if(state.view === 'client'){
     if(state.successData){
@@ -3682,15 +3750,45 @@ document.addEventListener('click', async (e)=>{
     await updateAppointmentRow(id, { status: 'confirmed', confirmedAt: new Date().toISOString() });
     render();
   }
+  else if(action === 'open-undo-finalized'){
+    state.ownerMenuOpen = false;
+    state.undoFinOpen = true;
+    state.undoFinQuery = '';
+    const inp = document.getElementById('undoFinSearch');
+    if(inp) inp.value = '';
+    render();
+  }
+  else if(action === 'close-undo-finalized'){
+    state.undoFinOpen = false;
+    render();
+  }
+  else if(action === 'undo-finalized'){
+    const id = t.dataset.id;
+    const appt = state.appointmentsCache.find(a => a.id === id);
+    if(!appt) return;
+    if(!confirm(`Desfazer a finalização de ${appt.name || 'este cliente'} (${appt.date.slice(8)}/${appt.date.slice(5,7)} às ${appt.time})? Ele volta para a agenda como Confirmado.`)) return;
+    await updateAppointmentRow(id, { status: 'confirmed', completedAt: null, chemicalType: null });
+    render();
+  }
+  else if(action === 'reopen-appt'){
+    const id = t.dataset.id;
+    const appt = state.appointmentsCache.find(a => a.id === id);
+    if(!appt) return;
+    if(!confirm(`Reabrir o atendimento de ${appt.name || 'este cliente'}? Ele volta para "Confirmado".`)) return;
+    await updateAppointmentRow(id, { status: 'confirmed', completedAt: null, chemicalType: null });
+    render();
+  }
   else if(action === 'arrived-appt'){
     const id = t.dataset.id;
     const appt = state.appointmentsCache.find(a => a.id === id);
+    if(appt && appt.date > todayISO() && !confirm(`Esse agendamento é de ${formatDatePretty(appt.date)}, outro dia. Marcar que o cliente chegou mesmo assim?`)) return;
     await updateAppointmentRow(id, { status: 'in_progress', confirmedAt: (appt && appt.confirmedAt) || new Date().toISOString() });
     render();
   }
   else if(action === 'finalize-appt'){
     const id = t.dataset.id;
     const appt = state.appointmentsCache.find(a => a.id === id);
+    if(appt && appt.date > todayISO() && !confirm(`Esse agendamento é de ${formatDatePretty(appt.date)}, outro dia. Finalizar mesmo assim?`)) return;
     if(appt && apptNeedsChemical(appt)){
       state.finalizeChemOpen = true;
       state.finalizeChemApptId = id;
@@ -3979,6 +4077,10 @@ document.addEventListener('input', (e)=>{
     state.clientListSearch = e.target.value;
     renderClientList();
   }
+  else if(action === 'input-undo-search'){
+    state.undoFinQuery = e.target.value;
+    renderUndoList();
+  }
   else if(action === 'input-resched-date'){
     const r = state.ownerResched;
     if(!r) return;
@@ -4055,6 +4157,7 @@ async function init(){
       renderMonthSummary();
       renderDayTotal();
       renderDashboard();
+      renderUndoFinalized();
     }, 7000);
     return;
   }
@@ -4102,6 +4205,7 @@ async function init(){
       renderMonthSummary();
       renderDayTotal();
       renderDashboard();
+      renderUndoFinalized();
     }
   }, 7000);
 }
