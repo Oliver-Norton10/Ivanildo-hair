@@ -1586,14 +1586,14 @@ const SERVICES = {
   feminino: {
     label: 'Cabelo (Feminino)',
     items: [
-      'Corte Feminino','Escova','Hidratação','Relaxamento','Luzes / Mechas (avaliação prévia)','Permanente Afro (avaliação prévia)','Pintura',
+      'Escova','Hidratação','Relaxamento','Luzes / Mechas (avaliação prévia)','Permanente Afro (avaliação prévia)','Pintura',
       'Alisamento (duas químicas) (avaliação prévia)',
       'Selante/progressiva (avaliação prévia)',
       'Permanente comum/suporte (avaliação prévia)'
     ]
   },
   masculino: {
-    label: 'Barbearia (Masculino)',
+    label: 'Barbearia/corte geral',
     items: [
       'Corte masculino','Barba','Sobrancelha','Pintura'
     ]
@@ -2173,7 +2173,7 @@ function renderClientFlow(){
       <label class="field-label">Categoria</label>
       <div class="cat-row">
         <div class="cat-chip ${state.category==='feminino'?'active':''}" data-action="pick-category" data-cat="feminino">Cabelo · Feminino</div>
-        <div class="cat-chip ${state.category==='masculino'?'active':''}" data-action="pick-category" data-cat="masculino">Barbearia · Masculino</div>
+        <div class="cat-chip ${state.category==='masculino'?'active':''}" data-action="pick-category" data-cat="masculino">Barbearia/corte geral</div>
       </div>
       <label class="field-label">Serviço</label>
       <div class="service-list">${serviceHtml}</div>
@@ -3109,7 +3109,7 @@ function renderManualBooking(){
     <label class="field-label">Categoria</label>
     <div class="cat-row">
       <div class="cat-chip ${state.manualCategory==='feminino'?'active':''}" data-action="manual-pick-category" data-cat="feminino">Cabelo · Feminino</div>
-      <div class="cat-chip ${state.manualCategory==='masculino'?'active':''}" data-action="manual-pick-category" data-cat="masculino">Barbearia · Masculino</div>
+      <div class="cat-chip ${state.manualCategory==='masculino'?'active':''}" data-action="manual-pick-category" data-cat="masculino">Barbearia/corte geral</div>
     </div>
     <label class="field-label">Serviço</label>
     <div class="service-list" style="margin-bottom:14px;">${serviceHtml}</div>
