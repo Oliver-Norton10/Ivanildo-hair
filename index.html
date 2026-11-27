@@ -1273,7 +1273,7 @@
       <div class="card">
         <label class="field-label">Telefone</label>
         <div class="history-search-row">
-          <input type="tel" id="historyPhoneInput" placeholder="(81) 99999-9999" data-action="input-history-phone">
+          <input type="tel" id="historyPhoneInput" placeholder="(16) 99999-9999" data-action="input-history-phone">
           <button data-action="search-history">Buscar</button>
         </div>
       </div>
@@ -1500,6 +1500,16 @@
     <div class="modal-card manual-modal-card">
       <h3 class="modal-title" id="ownerReschedTitle">Remarcar agendamento</h3>
       <div id="ownerReschedBody"></div>
+    </div>
+  </div>
+
+  <!-- PHONE REQUIRED NOTICE (client side) -->
+  <div id="phoneNoticeOverlay" class="modal-overlay" style="display:none">
+    <div class="modal-card manual-modal-card" style="text-align:center;">
+      <div style="font-size:34px; margin-bottom:6px;">📞</div>
+      <h3 class="modal-title">Falta o seu contato</h3>
+      <p class="modal-sub" id="phoneNoticeText"></p>
+      <button class="btn-primary" data-action="close-phone-notice">Entendi</button>
     </div>
   </div>
 
@@ -2192,7 +2202,7 @@ function renderClientFlow(){
       </div>
       <div class="field">
         <label class="field-label">Telefone (WhatsApp)</label>
-        <input type="tel" id="inputPhone" placeholder="(81) 99999-9999" value="${escapeHtml(state.phone)}" data-action="input-phone">
+        <input type="tel" id="inputPhone" placeholder="(16) 99999-9999" value="${escapeHtml(state.phone)}" data-action="input-phone">
       </div>
       ${state.hasRememberedData ? `<button type="button" class="not-you-link" data-action="not-you">Não é você? Limpar dados salvos neste aparelho</button>` : ''}
     </div>
@@ -3149,7 +3159,7 @@ function renderManualBooking(){
     </div>
     <div class="field">
       <label class="field-label">Telefone (opcional)</label>
-      <input type="tel" id="manualPhoneInput" placeholder="(81) 99999-9999" value="${escapeHtml(state.manualPhone)}" data-action="input-manual-phone">
+      <input type="tel" id="manualPhoneInput" placeholder="(16) 99999-9999" value="${escapeHtml(state.manualPhone)}" data-action="input-manual-phone">
     </div>
     <label class="field-label">Categoria</label>
     <div class="cat-row">
@@ -3405,6 +3415,13 @@ async function refreshAppointments(){
   render();
 }
 
+function showPhoneNotice(isEmpty){
+  document.getElementById('phoneNoticeText').innerHTML =
+    'Para finalizar o agendamento é necessário colocar o número para contato, assim a nossa equipe poderá entrar em contato para qualquer imprevisto.'
+    + (isEmpty ? '' : '<br><br><b>Confira o número:</b> digite com DDD, por exemplo (16) 99999-9999.');
+  document.getElementById('phoneNoticeOverlay').style.display = 'flex';
+}
+
 async function handleConfirm(){
   // Defer everything to the next tick. This makes sure we never replace
   // the DOM synchronously while the tap/click is still being processed —
@@ -3419,7 +3436,13 @@ async function handleConfirm(){
   const phone = state.phone.trim();
 
   if(!name){ state.error = 'Informe seu nome para continuar.'; render(); return; }
-  if(digitsOnly(phone).length < 10){ state.error = 'Informe um telefone válido com DDD.'; render(); return; }
+  if(digitsOnly(phone).length < 10){
+    // sem contato válido o agendamento NÃO é enviado: abre o aviso
+    state.error = '';
+    render();
+    showPhoneNotice(digitsOnly(phone).length === 0);
+    return;
+  }
   if(state.services.length === 0){ state.error = 'Escolha ao menos um serviço.'; render(); return; }
   if(!state.date){ state.error = 'Escolha uma data.'; render(); return; }
   if(isClosedDate(state.date)){ state.error = 'Fechado neste dia, escolha outra data.'; render(); return; }
@@ -3719,6 +3742,11 @@ document.addEventListener('click', async (e)=>{
   else if(action === 'pick-time'){
     state.time = t.dataset.time;
     render();
+  }
+  else if(action === 'close-phone-notice'){
+    document.getElementById('phoneNoticeOverlay').style.display = 'none';
+    const ph = document.getElementById('inputPhone');
+    if(ph){ ph.scrollIntoView({ block: 'center' }); ph.focus(); }
   }
   else if(action === 'confirm-booking'){
     handleConfirm();
