@@ -446,6 +446,8 @@
   }
   .btn-arrived-appt.secondary{ background:transparent; color:#8A5200; border:1.5px solid #D9962A; }
   .status-strip{ display:flex; gap:6px; flex-wrap:wrap; margin:0 0 10px; }
+  button.ss{ cursor:pointer; font-family:inherit; }
+  .fin-day{ font-size:12.5px; font-weight:700; color:var(--teal-dim); margin:14px 0 6px; }
   .status-strip .ss{ font-size:12px; font-weight:700; padding:5px 11px; border-radius:999px; border:1px solid var(--line); background:var(--bg-elev); color:var(--ink); }
   .status-strip .ss b{ margin-left:4px; }
   .status-strip .ss.wait{ color:var(--teal-dim); border-color:var(--teal-dim); }
@@ -1297,7 +1299,7 @@
               <button class="owner-menu-item" data-action="open-month-summary">📊 Resumo do mês</button>
               <button class="owner-menu-item" data-action="open-day-total">🧮 Total de clientes do dia</button>
               <button class="owner-menu-item" data-action="open-dashboard">📈 Dashboard</button>
-              <button class="owner-menu-item" data-action="open-undo-finalized">↩ Desfazer atendimentos finalizados</button>
+              <button class="owner-menu-item" data-action="open-undo-finalized">✔ Atendimentos finalizados</button>
             </div>
           </div>
           <button class="owner-exit-btn" data-action="exit-owner">Sair</button>
@@ -1482,11 +1484,12 @@
     <div class="modal-card dash-modal-card">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
         <div>
-          <h3 class="modal-title">Desfazer finalizados</h3>
-          <p class="modal-sub" style="margin-bottom:0;">Finalizado por engano? Escolha o atendimento e ele volta para a agenda como <b>Confirmado</b>.</p>
+          <h3 class="modal-title">Atendimentos finalizados</h3>
+          <p class="modal-sub" style="margin-bottom:0;">Quando um atendimento é finalizado, ele sai da agenda e fica aqui, separado por área e por dia. Finalizou por engano? Toque em <b>Desfazer</b> e ele volta para a agenda como Confirmado.</p>
         </div>
         <button class="owner-exit-btn" data-action="close-undo-finalized">Fechar</button>
       </div>
+      <div id="undoFinTabs" class="owner-tabs" style="margin-top:12px;"></div>
       <input type="text" id="undoFinSearch" placeholder="Buscar por nome, telefone ou serviço" data-action="input-undo-search" style="margin:12px 0 10px;">
       <div id="undoFinList"></div>
     </div>
@@ -1545,6 +1548,10 @@ const SALON_NAME = 'Ivanildo';
 const OPEN_TIME = '08:00';
 const CLOSE_TIME = '18:00';
 const SLOT_MINUTES = 30;
+// Barbearia: nesses dias o Ivanildo sai (consulta médica) e a barbearia só
+// atende até as 12h. Vale SÓ pra área masculina; a feminina segue normal.
+const MASC_AWAY_WEEKDAYS = [2, 4, 6]; // terça, quinta, sábado
+const MASC_AWAY_FROM = '12:00';
 const CLOSED_WEEKDAYS = [0, 1]; // 0 = domingo, 1 = segunda
 // Em dezembro o movimento aumenta e o Ivanildo passa a atender também
 // nas segundas-feiras. Ele continua podendo bloquear um dia específico
@@ -1595,7 +1602,7 @@ const SERVICES = {
   masculino: {
     label: 'Barbearia/corte geral',
     items: [
-      'Corte masculino','Barba','Sobrancelha','Pintura'
+      'Corte geral','Barba','Sobrancelha','Pintura'
     ]
   }
 };
@@ -1641,6 +1648,7 @@ let state = {
   dayTotalOpen: false,
   undoFinOpen: false,
   undoFinQuery: '',
+  finishedTab: 'masculino',
   ownerResched: null, // { id, date, time, error, done, oldDate, oldTime }
   dashboardOpen: false,
   dashPeriod: 'week7',
@@ -1851,6 +1859,8 @@ async function insertAppointment(obj){
       if(state.appointmentsCache) state.appointmentsCache.push(created);
       return created;
     }catch(e){
+      // horário já ocupado (trava do banco): NÃO salva só neste aparelho, avisa que ocupou
+      if(e && (e.code === '23505' || /duplicate key|unique constraint/i.test(e.message || ''))) return null;
       console.error('Supabase insert failed, falling back to local storage:', e);
       // falls through to the local fallback below instead of giving up
     }
@@ -2054,6 +2064,10 @@ function blockScopeLabel(cat){
 // Horários que NÃO dá pra bloquear no escopo escolhido (já ocupados por
 // agendamento da área ou já bloqueados pra ela).
 function takenTimesForScope(dateISO, scope){
+  const away = scope === 'masculino' ? generateAllSlots().filter(s => isMascAwayTime(dateISO, s, 'masculino')) : [];
+  return away.concat(takenTimesForScopeBase(dateISO, scope));
+}
+function takenTimesForScopeBase(dateISO, scope){
   return state.appointmentsCache
     .filter(a => a.date === dateISO && a.status !== 'cancelled')
     .filter(a => {
@@ -2072,6 +2086,7 @@ function takenTimesForScope(dateISO, scope){
 //   decides on the spot, per case, how many clients he can actually take
 //   at a given hour (the occupancy panel below helps him track it)
 function isSlotTakenFor(date, time, category, servicesList, excludeId){
+  if(isMascAwayTime(date, time, category)) return true;
   const sameSlot = state.appointmentsCache.filter(a =>
     a.date === date && a.time === time && a.status !== 'cancelled' && a.id !== excludeId
   );
@@ -2082,6 +2097,19 @@ function isSlotTakenFor(date, time, category, servicesList, excludeId){
   }
 
   return false; // feminino: never blocked by another feminino booking
+}
+
+function isMascAwayDay(iso){
+  if(!iso) return false;
+  const [y,m,d] = iso.split('-').map(Number);
+  return MASC_AWAY_WEEKDAYS.includes(new Date(y, m-1, d).getDay());
+}
+function isMascAwayTime(date, time, category){
+  return category === 'masculino' && isMascAwayDay(date) && String(time) >= MASC_AWAY_FROM;
+}
+function mascAwayNoticeHtml(date, category){
+  if(category !== 'masculino' || !isMascAwayDay(date)) return '';
+  return `<div class="empty-note" style="margin-top:10px;">💈 Às terças, quintas e sábados o ${SALON_NAME} atende na barbearia só até as 12h.</div>`;
 }
 
 // How many feminino clients are already stacked into this exact date+time
@@ -2114,14 +2142,14 @@ function buildSlotsHtml(){
     if(allBlocked){
       return `<div class="empty-note">${SALON_NAME} não vai atender nesse dia. Escolha outra data.</div>`;
     }
-    return `<div class="empty-note">Sem horários livres nesta data. Tente outro dia.</div>`;
+    return `<div class="empty-note">Sem horários livres nesta data. Tente outro dia.</div>` + mascAwayNoticeHtml(state.date, state.category);
   }
   return '<div class="slots-grid">' + allSlots.map(s=>{
     const isTaken = isSlotTakenFor(state.date, s, state.category, state.services, state.rescheduleApptId);
     const isSelected = state.time === s;
     return `<div class="slot ${isTaken?'taken':''} ${isSelected?'selected':''}"
               ${isTaken?'':'data-action="pick-time" data-time="'+s+'"'}>${s}</div>`;
-  }).join('') + '</div>';
+  }).join('') + '</div>' + mascAwayNoticeHtml(state.date, state.category);
 }
 
 // Refreshes ONLY the time-slot grid (used by the background poll), so it
@@ -2680,7 +2708,8 @@ function renderUndoList(){
   if(!box) return;
   const q = (state.undoFinQuery || '').trim().toLowerCase();
   const qDigits = digitsOnly(q);
-  let list = state.appointmentsCache.filter(a => a.status === 'completed');
+  let list = state.appointmentsCache.filter(a => a.status === 'completed'
+    && (state.finishedTab === 'masculino' ? a.category === 'masculino' : a.category !== 'masculino'));
   if(q){
     list = list.filter(a =>
       (a.name || '').toLowerCase().includes(q) ||
@@ -2688,26 +2717,42 @@ function renderUndoList(){
       (qDigits.length >= 3 && digitsOnly(a.phone).includes(qDigits)));
   }
   list.sort((a,b) => (b.date + b.time).localeCompare(a.date + a.time));
-  const total = list.length;
-  list = list.slice(0, 50);
   if(!list.length){
-    box.innerHTML = `<div class="empty-note">${q ? 'Nenhum atendimento finalizado encontrado.' : 'Não há atendimentos finalizados.'}</div>`;
+    box.innerHTML = `<div class="empty-note">${q ? 'Nenhum atendimento finalizado encontrado.' : 'Ainda não há atendimentos finalizados nesta área.'}</div>`;
     return;
   }
-  box.innerHTML = list.map(a => `
+  const total = list.length;
+  list = list.slice(0, 150);
+  const wd = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const groups = [];
+  list.forEach(a => {
+    let g = groups[groups.length-1];
+    if(!g || g.date !== a.date){ g = { date: a.date, items: [] }; groups.push(g); }
+    g.items.push(a);
+  });
+  box.innerHTML = groups.map(g => {
+    const [y,m,d] = g.date.split('-').map(Number);
+    const label = `${wd[new Date(y,m-1,d).getDay()]}, ${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}`;
+    return `<div class="fin-day">${label} · ${plural(g.items.length, 'atendimento', 'atendimentos')}</div>` + g.items.map(a => `
     <div class="undo-item">
-      <div class="u-when"><b>${a.time}</b>${a.date.slice(8)}/${a.date.slice(5,7)}</div>
+      <div class="u-when"><b>${a.time}</b></div>
       <div class="u-main">
         <div class="u-name">${a.name && a.name.trim() ? escapeHtml(a.name) : 'Cliente sem nome informado'}</div>
-        <div class="u-sub">${a.category === 'masculino' ? '💈' : '✂️'} ${escapeHtml(a.service || '')}</div>
+        <div class="u-sub">${escapeHtml(a.service || '')}${a.chemicalType ? ' · 🧪 ' + escapeHtml(a.chemicalType) : ''}</div>
       </div>
       <button data-action="undo-finalized" data-id="${a.id}">Desfazer</button>
-    </div>`).join('') + (total > 50 ? `<div class="empty-note" style="padding:6px 0;">Mostrando os 50 mais recentes. Use a busca para achar outro.</div>` : '');
+    </div>`).join('');
+  }).join('') + (total > 150 ? `<div class="empty-note" style="padding:6px 0;">Mostrando os 150 mais recentes. Use a busca para achar outro.</div>` : '');
 }
 function renderUndoFinalized(){
   const overlay = document.getElementById('undoFinOverlay');
   overlay.style.display = state.undoFinOpen ? 'flex' : 'none';
   if(!state.undoFinOpen) return;
+  const done = state.appointmentsCache.filter(a => a.status === 'completed');
+  const nM = done.filter(a => a.category === 'masculino').length;
+  const nF = done.length - nM;
+  const tb = (key, label, cls, n) => `<button class="owner-tab ${cls} ${state.finishedTab===key?'active':''}" data-action="finished-tab" data-tab="${key}"><span>${label}</span><span class="tab-count">${n}</span></button>`;
+  document.getElementById('undoFinTabs').innerHTML = tb('masculino','💈 Barbearia','',nM) + tb('feminino','✂️ Feminino','is-fem',nF);
   renderUndoList();
 }
 
@@ -3229,7 +3274,10 @@ function renderOwner(){
     </div>`;
   };
 
-  const apptsOnly = dayEntries.filter(a => a.status !== 'blocked');
+  const apptsAll = dayEntries.filter(a => a.status !== 'blocked');
+  const apptsOnly = apptsAll.filter(a => a.status !== 'completed'); // finalizado sai da agenda (fica em ☰ → Atendimentos finalizados)
+  const doneMasc = apptsAll.filter(a => a.status === 'completed' && a.category === 'masculino').length;
+  const doneFem  = apptsAll.filter(a => a.status === 'completed' && a.category !== 'masculino').length;
   const masc = apptsOnly.filter(a => a.category === 'masculino');
   const fem  = apptsOnly.filter(a => a.category !== 'masculino');
   const blocks = dayEntries.filter(a => a.status === 'blocked');
@@ -3254,6 +3302,7 @@ function renderOwner(){
     blocks: 'Nenhum horário bloqueado neste dia.'
   };
   const cur = lists[tab];
+  const doneN = tab === 'masculino' ? doneMasc : tab === 'feminino' ? doneFem : 0;
 
   listEl.innerHTML = `
     <div class="owner-tabs">
@@ -3261,15 +3310,15 @@ function renderOwner(){
       ${tabBtn('feminino', '✂️ Feminino', 'is-fem', fem.length)}
       ${blocks.length ? tabBtn('blocks', '🔒 Bloqueados', 'is-blocks', blocks.length) : ''}
     </div>
-    ${(tab !== 'blocks' && cur.length > 0) ? `<div class="status-strip">
+    ${(tab !== 'blocks' && (cur.length > 0 || doneN > 0)) ? `<div class="status-strip">
       <span class="ss wait">⏳ A chegar<b>${cur.filter(a => a.status === 'pending' || a.status === 'confirmed').length}</b></span>
       <span class="ss go">▶ Em andamento<b>${cur.filter(a => a.status === 'in_progress').length}</b></span>
-      <span class="ss done">✔ Finalizados<b>${cur.filter(a => a.status === 'completed').length}</b></span>
+      <button class="ss done" data-action="open-undo-finalized" data-tab="${tab}">✔ Finalizados<b>${doneN}</b> ›</button>
     </div>` : ''}
     ${(tab !== 'blocks' && cur.length > 1) ? `<div class="collapse-all-row"><span class="sort-group"><button class="sort-btn ${state.ownerSort==='time'?'active':''}" data-action="owner-sort" data-sort="time">🕒 Por horário</button><button class="sort-btn ${state.ownerSort==='created'?'active':''}" data-action="owner-sort" data-sort="created">📥 Por chegada</button></span><button class="collapse-all-btn" data-action="toggle-all-cards">${cur.every(a => state.collapsedCards[String(a.id)]) ? '▾ Expandir todos' : '▴ Recolher todos'}</button></div>` : ''}
     ${cur.length
       ? `<div class="owner-section-grid">${cur.map(buildCard).join('')}</div>`
-      : `<div class="owner-section-empty">${emptyText[tab]}</div>`}`;
+      : `<div class="owner-section-empty">${doneN > 0 ? 'Nenhum atendimento pendente neste dia. Os finalizados ficam em ☰ → Atendimentos finalizados.' : emptyText[tab]}</div>`}`;
 }
 
 /* =========================================================
@@ -3387,6 +3436,8 @@ async function handleConfirm(){
   // the database's own unique constraint is the real, airtight
   // guarantee — see insertAppointment — so this never needs a fresh
   // network round-trip that could itself hang)
+  const freshC = await loadAppointmentsFresh();
+  if(freshC !== null) state.appointmentsCache = freshC;
   const latest = state.appointmentsCache.slice();
   const conflict = isSlotTakenFor(state.date, state.time, state.category, state.services, state.rescheduleApptId);
 
@@ -3635,7 +3686,7 @@ document.addEventListener('click', async (e)=>{
     renderOwner();
   }
   else if(action === 'toggle-all-cards'){
-    const dayList = state.appointmentsCache.filter(a => a.date === state.ownerDate && a.status !== 'cancelled' && a.status !== 'blocked'
+    const dayList = state.appointmentsCache.filter(a => a.date === state.ownerDate && a.status !== 'cancelled' && a.status !== 'blocked' && a.status !== 'completed'
       && (state.ownerTab === 'masculino' ? a.category === 'masculino' : a.category !== 'masculino'));
     const allCollapsed = dayList.every(a => state.collapsedCards[String(a.id)]);
     dayList.forEach(a => { if(allCollapsed) delete state.collapsedCards[String(a.id)]; else state.collapsedCards[String(a.id)] = true; });
@@ -3750,7 +3801,12 @@ document.addEventListener('click', async (e)=>{
     await updateAppointmentRow(id, { status: 'confirmed', confirmedAt: new Date().toISOString() });
     render();
   }
+  else if(action === 'finished-tab'){
+    state.finishedTab = t.dataset.tab === 'feminino' ? 'feminino' : 'masculino';
+    renderUndoFinalized();
+  }
   else if(action === 'open-undo-finalized'){
+    if(t.dataset.tab) state.finishedTab = t.dataset.tab === 'feminino' ? 'feminino' : 'masculino';
     state.ownerMenuOpen = false;
     state.undoFinOpen = true;
     state.undoFinQuery = '';
@@ -3880,7 +3936,7 @@ document.addEventListener('click', async (e)=>{
     state.manualBookingOpen = true;
     state.manualName = '';
     state.manualPhone = '';
-    state.manualCategory = 'feminino';
+    state.manualCategory = state.ownerTab === 'masculino' ? 'masculino' : 'feminino';
     state.manualServices = [];
     state.manualDate = state.ownerDate;
     state.manualTime = null;
@@ -3916,6 +3972,8 @@ document.addEventListener('click', async (e)=>{
     if(isClosedDate(state.manualDate)){ state.manualError = 'Fechado neste dia, escolha outra data.'; render(); return; }
     if(!state.manualTime){ state.manualError = 'Escolha um horário.'; render(); return; }
 
+    const freshM = await loadAppointmentsFresh();
+    if(freshM !== null) state.appointmentsCache = freshM;
     const latest = state.appointmentsCache.slice();
     const conflict = isSlotTakenFor(state.manualDate, state.manualTime, state.manualCategory, state.manualServices, null);
     if(conflict){
@@ -4209,6 +4267,21 @@ async function init(){
     }
   }, 7000);
 }
+// ao voltar pro app (celular desbloqueado, aba reaberta, internet voltou) atualiza já,
+// sem esperar o próximo ciclo de 7s — assim o horário que o Ivanildo acabou de marcar some na hora
+async function refreshOnReturn(){
+  if(document.visibilityState === 'hidden' || state.submitting) return;
+  if(state.view !== 'client') return;
+  const fresh = await loadAppointmentsFresh();
+  if(fresh === null) return;
+  state.appointmentsCache = fresh;
+  if(state.successData) renderSuccess(); else renderSlotsOnly();
+}
+document.addEventListener('visibilitychange', refreshOnReturn);
+window.addEventListener('focus', refreshOnReturn);
+window.addEventListener('online', refreshOnReturn);
+window.addEventListener('pageshow', refreshOnReturn);
+
 init();
 
 })();
